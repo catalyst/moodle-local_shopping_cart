@@ -30,16 +30,26 @@ $string['modulename'] = 'Shopping Cart';
 
 // General strings.
 $string['addtocart'] = 'Add to cart';
+$string['allowrebooking'] = 'Allow rebooking';
+$string['allowrebooking_desc'] = 'Allow users to rebook already bought items.
+They can be marked for rebooking and will be added to the shopping cart with a negative price.
+When rebooking, they will be cancelled and another item will be bought at the same time.
+The overall price of the rebooking must not be negative.';
 $string['allowrebookingcredit'] = 'Rebooking credit';
 $string['allowrebookingcredit_desc'] = 'If you activate rebooking credit, a user will get refunded the cancelation and booking fee
 if (s)he cancels an item within the cancelation period and books another item.';
 $string['cash'] = 'Cash';
 $string['choose...'] = 'Choose...';
 $string['mycart'] = 'My Cart';
+$string['nolimit'] = 'No limit';
 $string['optioncancelled'] = 'Booking option cancelled';
+$string['rebooking'] = 'Rebooking';
 $string['rebookingcredit'] = 'Rebooking credit';
 $string['sendpaymentbutton'] = 'Checkout';
 $string['showorderid'] = 'Show Order-ID...';
+$string['testing:title'] = 'Shopping cart demo';
+$string['testing:description'] = 'Here you can test your shopping cart by adding test items to the cart.';
+$string['testing:item'] = 'Test item';
 
 // Settings.
 $string['maxitems'] = 'Max. items in the shopping cart';
@@ -51,6 +61,8 @@ $string['expirationtime:description'] = 'How long should the item be in the cart
 $string['cancelationfee'] = 'Cancelation fee';
 $string['bookingfee'] = 'Booking fee';
 $string['bookingfee_desc'] = 'Booking fee for every checkout.';
+$string['rebookingfee'] = 'Rebooking fee';
+$string['rebookingfee_desc'] = 'Rebooking fee for every rebooking.';
 $string['uniqueidentifier'] = 'Unique id';
 $string['uniqueidentifier_desc'] = 'Define the starting id, if you want. If you set this value to 10000000 the first purchase will have the id 10000001. If you set the value, the max number of digits will be defined as well. If you set it to 1, you can only have 9 purchases.';
 $string['bookingfeeonlyonce'] = 'Charge booking fee only once';
@@ -103,6 +115,14 @@ $string['privacyheading'] = "Privacy settings";
 $string['privacyheadingdescription'] = "Set behaviour related to the privacy settings in Moodle";
 $string['deleteledger'] = "Delete ledger on deletion request of user";
 $string['deleteledgerdescription'] = "The ledger will hold payment information which you might need to keep for legal reasons, even when a user is deleted.";
+
+$string['rebookingheading'] = "Rebookings";
+$string['rebookingheadingdescription'] = "Purchases can be rebooked under certain circumstances. This means that, for example, a purchased course is canceled. Instead of a credit, it is immediately rebooked to another course. No additional booking fee is charged. Any overpayments will be forfeited.";
+$string['rebookingperiod'] = "Rebooking Period";
+$string['rebookingperioddesc'] = "The time during which the maximum number of rebookings can be restricted. Typically the duration of a semester.";
+$string['rebookingmaxnumber'] = "Maximum Number of Rebookings";
+$string['rebookingmaxnumberdesc'] = "For example, only 3 rebookings are allowed within 100 days";
+$string['rebookingalert'] = "To rebook, add another course to your cart";
 
 // Capabilities.
 $string['shopping_cart:canbuy'] = 'Can buy';
@@ -227,6 +247,9 @@ $string['cancelsuccess'] = 'Successfully canceled';
 $string['applytocomponent'] = 'Cancel without callback to plugin';
 $string['applytocomponent_desc'] = 'With this setting unchecked, you can cancel eg a double booking without unenroling a buyer from the bought course.';
 
+$string['markforrebooking'] = 'Rebook to another course';
+$string['markedforrebooking'] = 'Marked for rebooking';
+
 $string['youcancanceluntil'] = 'You can cancel until {$a}.';
 $string['youcannotcancelanymore'] = 'No cancelation possible.';
 
@@ -287,8 +310,8 @@ $string['confirmpaidbackbody'] =
  'Do you really want to confirm that you have paid back the user her credit? This will set her credit to 0.';
 $string['confirmpaidback'] = 'Confirm';
 
-$string['confirmzeropricecheckouttitle'] = 'Pay with your credits';
-$string['confirmzeropricecheckoutbody'] = 'You have enough credits to pay fully for your purchase. Do you want to proceed?';
+$string['confirmzeropricecheckouttitle'] = 'Book now';
+$string['confirmzeropricecheckoutbody'] = 'You do not have to pay anything. Do you want to proceed and book?';
 $string['confirmzeropricecheckout'] = 'Confirm';
 
 $string['deletecreditcash'] = 'Refunded with cash';
@@ -337,6 +360,14 @@ $string['titledailysums:all'] = 'All revenues';
 $string['titledailysums:total'] = 'Total revenue';
 $string['titledailysums:current'] = 'Current cashier';
 $string['dailysums:downloadpdf'] = 'Download daily sums as PDF';
+$string['dailysumspdfhtml'] = 'HTML template for the daily sums PDF';
+$string['dailysumspdfhtml:description'] = 'Enter HTML to create the daily sums PDF. You can use the following placeholders:
+[[title]], [[date]], [[totalsum]], [[printdate]], [[currency]], [[online]], [[cash]], [[creditcard]], [[debitcard]],
+[[manual]], [[creditspaidbackcash]], [[creditspaidbacktransfer]].<br>
+Leave this empty to use the default template.';
+$string['downloadcashreportlimit'] = 'Download limit';
+$string['downloadcashreportlimitdesc'] = 'Enter the max. number of rows for cash report download.
+By limiting, you can fix troubles with too large amounts of data.';
 
 // Report headers.
 $string['timecreated'] = 'Created';
@@ -446,7 +477,8 @@ $string['payment_added'] = 'User has started a payment transaction';
 $string['payment_added_log'] = 'User with the userid {$a->userid} has started a payment with the identifier {$a->identifier} for item {$a->itemid} {$a->component} for the user with the id {$a->relateduserid}';
 
 // Caches.
-$string['cachedef_schistory'] = 'Cache is used to store shopping cart items for users';
+$string['cachedef_schistory'] = 'Shopping cart items cache (shopping cart history cache)';
+$string['cachedef_cacherebooking'] = 'Rebooking cache';
 
 // Cashier manual rebook.
 $string['annotation'] = 'Annotation';
@@ -478,7 +510,7 @@ $string['history'] = "Purchases";
 $string['ledger'] = "Ledger";
 $string['credits'] = "Credits";
 
-// GDPR
+// GDPR.
 $string['privacy:metadata:local_shopping_cart_history'] = 'Shopping Cart History';
 $string['privacy:metadata:local_shopping_cart_history:userid'] = 'Userid of the user who optained something.';
 $string['privacy:metadata:local_shopping_cart_history:itemid'] = 'Id of the item bought.';
@@ -546,3 +578,40 @@ $string['privacy:metadata:local_shopping_cart_invoices'] = 'Table for issued inv
 $string['privacy:metadata:local_shopping_cart_invoices:identifier'] = 'Reference to local_shopping_cart_ledger';
 $string['privacy:metadata:local_shopping_cart_invoices:timecreated'] = 'Timestamp when the record was created';
 $string['privacy:metadata:local_shopping_cart_invoices:invoiceid'] = 'Invoice ID from the invoicing platform';
+
+// Shopping cart handler.
+$string['allowinstallment'] = 'Allow installments';
+$string['allowinstallment_help'] = 'With installments, only a part of the total amount needs to be paid initially.';
+$string['useinstallments'] = "Use installment payments";
+$string['ledgerinstallment'] = 'The following installment payment was registered: Number {$a->id}, due date {$a->date}';
+
+$string['numberofpayments'] = 'Number of Payments';
+$string['numberofpayments_help'] = "This number refers to the required payments AFTER the first payment. Please note that installments will not be possible if there isn't enough time until coursestart, considering number of payments and time between payments (admin plugin setting).";
+$string['duedate'] = 'Final payment date';
+$string['duedate_help'] = 'The full amount must be paid by this date. If the date is 100 days in the future
+and two installment payments are set, half of the remaining amount must be paid after 50 days following the
+first payment, and the rest after 100 days.';
+$string['duedatevariable'] = 'Due nr. of days after initial purchase';
+$string['duedatevariable_help'] = 'Enter the number of days after initial purchase when last payment is due. ';
+$string['duedaysbeforecoursestart'] = 'Due nr. of days before coursestart';
+$string['duedaysbeforecoursestart_help'] = 'Enter the number of days before course start when last payment is due';
+$string['on'] = "on";
+$string['furtherpayments'] = 'Further payments';
+$string['insteadof'] = "instead of";
+$string['for'] = "for";
+$string['downpayment'] = "Down payment";
+$string['downpayment_help'] = 'This amount must be paid initially. The remaining sum can be paid later.';
+$string['installments'] = "Installments";
+$string['installment'] = "Installment";
+$string['incorrectnumberofpayments'] = 'Price needs to be divisble by number of payments without a remainder';
+$string['installmentsettings'] = 'Installments settings';
+$string['enableinstallments'] = 'Enable Installments';
+$string['enableinstallments_desc'] = 'For each item sold, it can be set whether installments are possible and under what conditions.';
+$string['timebetweenpayments'] = 'Time Between Payments';
+$string['timebetweenpayments_desc'] = 'The time between payments, usually 30 days.';
+$string['onlyone'] = 'Only one of these values can be more than 0';
+$string['reminderdaysbefore'] = "Reminder x days before";
+$string['reminderdaysbefore_desc'] = "X days before a payment is due, a reminder is shown to the concerned user on your site";
+$string['installmentpaymentisdue'] = 'Don\'t forget: {$a->itemname}, {$a->price} {$a->currency}. <a href="/local/shopping_cart/installments.php">Click here to pay</a>';
+$string['installmentpaymentwasdue'] = 'Don\'t forget: {$a->itemname}, {$a->price} {$a->currency}. <a href="/local/shopping_cart/installments.php">Click here to pay</a>';
+$string['noinstallments'] = "Currently there are no open installment payments";

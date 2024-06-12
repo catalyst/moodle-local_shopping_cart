@@ -83,6 +83,11 @@ class shopping_cart_bookingfee {
             $itemid = LOCAL_SHOPPING_CART_BOOKINGFEE_EACHPURCHASE;
         }
 
+        // See if we are about to rebook, we don't add the booking fee.
+        if (($buyforuserid == 0) && shopping_cart_rebookingcredit::is_rebooking($userid)) {
+            return false;
+        }
+
         shopping_cart::add_item_to_cart('local_shopping_cart', 'bookingfee', $itemid, $userid);
 
         return true;

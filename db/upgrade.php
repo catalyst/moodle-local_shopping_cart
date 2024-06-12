@@ -451,6 +451,90 @@ function xmldb_local_shopping_cart_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2023102300, 'local', 'shopping_cart');
     }
 
+    if ($oldversion < 2024032000) {
+
+        // Define field schistoryid to be added to local_shopping_cart_ledger.
+        $table = new xmldb_table('local_shopping_cart_ledger');
+        $field = new xmldb_field('schistoryid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'annotation');
+
+        // Conditionally launch add field schistoryid.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Shopping_cart savepoint reached.
+        upgrade_plugin_savepoint(true, 2024032000, 'local', 'shopping_cart');
+    }
+
+    if ($oldversion < 2024042400) {
+
+        // Define table local_shopping_cart_iteminfo to be created.
+        $table = new xmldb_table('local_shopping_cart_iteminfo');
+
+        // Adding fields to table local_shopping_cart_iteminfo.
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('itemid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('componentname', XMLDB_TYPE_CHAR, '120', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('area', XMLDB_TYPE_CHAR, '120', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('json', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('usermodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+        // Adding keys to table local_shopping_cart_iteminfo.
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+
+        // Conditionally launch create table for local_shopping_cart_iteminfo.
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        $index = new xmldb_index(
+            'itemid-componentname-area',
+            XMLDB_INDEX_UNIQUE,
+            ['itemid', 'componentname', 'area']
+        );
+
+        // Conditionally launch add index idxuse.
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        // Shopping_cart savepoint reached.
+        upgrade_plugin_savepoint(true, 2024042400, 'local', 'shopping_cart');
+    }
+
+    if ($oldversion < 2024042401) {
+
+        // Define field schistoryid to be added to local_shopping_cart_ledger.
+        $table = new xmldb_table('local_shopping_cart_iteminfo');
+        $field = new xmldb_field('allowinstallment', XMLDB_TYPE_INTEGER, '1', null, null, null, null, 'area');
+
+        // Conditionally launch add field schistoryid.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Define field installments to be added to local_shopping_cart_history.
+        $table = new xmldb_table('local_shopping_cart_history');
+        $field = new xmldb_field('installments', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'area');
+
+        // Conditionally launch add field installments.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('json', XMLDB_TYPE_TEXT, null, null, null, null, null, 'installments');
+
+        // Conditionally launch add field json.
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Shopping_cart savepoint reached.
+        upgrade_plugin_savepoint(true, 2024042401, 'local', 'shopping_cart');
+    }
+
     // For further information please read {@link https://docs.moodle.org/dev/Upgrade_API}.
     //
     // You will also have to create the db/install.xml file by using the XMLDB Editor.

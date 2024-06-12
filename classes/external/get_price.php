@@ -27,10 +27,12 @@ declare(strict_types=1);
 namespace local_shopping_cart\external;
 
 use context_system;
+use external_multiple_structure;
 use external_api;
 use external_function_parameters;
 use external_value;
 use external_single_structure;
+use local_shopping_cart\local\cartstore;
 use local_shopping_cart\shopping_cart;
 use moodle_exception;
 
@@ -57,6 +59,7 @@ class get_price extends external_api {
         return new external_function_parameters([
                         'userid' => new external_value(PARAM_INT, 'userid', VALUE_DEFAULT, 0),
                         'usecredit' => new external_value(PARAM_INT, 'use credit', VALUE_DEFAULT, 0),
+                        'useinstallments' => new external_value(PARAM_INT, 'use installments', VALUE_DEFAULT, 0),
                 ]
         );
     }
@@ -66,13 +69,15 @@ class get_price extends external_api {
      *
      * @param int $userid
      * @param int $usecredit
+     * @param int $useinstallments
      *
      * @return array
      */
-    public static function execute(int $userid, int $usecredit): array {
+    public static function execute(int $userid, int $usecredit, int $useinstallments): array {
         $params = self::validate_parameters(self::execute_parameters(), [
                 'userid' => $userid,
                 'usecredit' => $usecredit,
+                'useinstallments' => $useinstallments,
         ]);
 
         global $USER;
@@ -86,8 +91,6 @@ class get_price extends external_api {
         if (!has_capability('local/shopping_cart:canbuy', $context)) {
             throw new moodle_exception('norighttoaccess', 'local_shopping_cart');
         }
-
-        $usecredit = $params['usecredit'] == 1 ? true : false;
 
         // As we need the userid in two functions below, we have this logic here.
         $context = context_system::instance();
@@ -103,15 +106,16 @@ class get_price extends external_api {
 
         // Add the state to the cache.
         shopping_cart::save_used_credit_state($userid, $usecredit);
+        $cartstore = cartstore::instance($userid);
+        $cartstore->save_useinstallments_state($params['useinstallments']);
 
         // The price is calculated from the cache, but there is a fallback to DB, if no cache is available.
-        $data = shopping_cart::local_shopping_cart_get_cache_data($userid, $usecredit);
+        $cartstore = cartstore::instance($userid);
+        $data = $cartstore->get_data();
 
         // For the webservice, we must make sure that the keys exist.
-
         $data['remainingcredit'] = $data['remainingcredit'] ?? 0;
         $data['deductible'] = $data['deductible'] ?? 0;
-        $data['usecredit'] = $data['usecredit'] ?? 0;
 
         return $data;
     }
@@ -137,7 +141,25 @@ class get_price extends external_api {
                         'remainingcredit' => new external_value(PARAM_FLOAT, 'Credits after reduction', VALUE_REQUIRED),
                         'deductible' => new external_value(PARAM_FLOAT, 'Deductible amount', VALUE_REQUIRED),
                         'usecredit' => new external_value(PARAM_INT, 'If we want to use the credit or not', VALUE_REQUIRED),
+                        'useinstallments' => new external_value(PARAM_INT, 'If we want to use installments or not', VALUE_REQUIRED),
                         'discount' => new external_value(PARAM_FLOAT, 'The sum of all discounts on the items.', VALUE_DEFAULT, 0),
+                        'installmentscheckboxid' => new external_value(PARAM_TEXT,
+                            'As indicator if installments are used at all.', VALUE_DEFAULT, ''),
+                        'installments' => new external_multiple_structure(
+                            new external_single_structure([
+                                'initialpayment' => new external_value(PARAM_FLOAT, 'Initialpayment', VALUE_REQUIRED),
+                                'originalprice' => new external_value(PARAM_FLOAT, 'Original price', VALUE_REQUIRED),
+                                'itemname' => new external_value(PARAM_TEXT, 'Item name', VALUE_REQUIRED),
+                                'currency' => new external_value(PARAM_TEXT, 'Currency', VALUE_REQUIRED),
+                                'payments' => new external_multiple_structure(
+                                    new external_single_structure([
+                                        'price' => new external_value(PARAM_FLOAT, 'Amount to pay', VALUE_REQUIRED),
+                                        'date' => new external_value(PARAM_TEXT, 'Date as string', VALUE_REQUIRED),
+                                        'currency' => new external_value(PARAM_TEXT, 'Currency', VALUE_REQUIRED),
+                                    ])
+                                ),
+                            ])
+                        ),
                 ]
         );
     }

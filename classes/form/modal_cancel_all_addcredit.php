@@ -87,7 +87,7 @@ class modal_cancel_all_addcredit extends dynamic_form {
 
         $mform->addElement('float', 'cancelationfee', get_string('cancelationfee', 'local_shopping_cart'));
         $mform->setDefault('cancelationfee', $cancelationfee);
-        $mform->setType('area', PARAM_FLOAT);
+        $mform->setType('cancelationfee', PARAM_FLOAT);
 
     }
 
@@ -123,8 +123,6 @@ class modal_cancel_all_addcredit extends dynamic_form {
 
         $componentname = $data->componentname;
         $area = $data->area;
-
-        booking_option::cancelbookingoption($data->itemid, get_string('optioncancelled', 'local_shopping_cart'));
 
         foreach ($bookedusers as $buser) {
 

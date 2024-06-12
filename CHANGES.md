@@ -1,3 +1,69 @@
+## Version 0.9.0 (2024052101)
+* Bugfixes: Add creation date to ledger.
+* Bugfixes: Installment checkbox.
+* Bugfixes: Correct price calculation.
+* Bugfixes: Duplicated treatment for rebooking.
+
+## Version 0.8.9 (2024051501)
+* Improvement: Add rebookingfee.
+* Bugfixes: A couple of rebooking bugs.
+
+## Version 0.8.8 (2024051500)
+* Improvement: Add Installments.
+* Bugfix: Missing ledger.
+
+## Version 0.8.7 (2024050800)
+* Bugfix: Show expirationdate correctly.
+* Bugfix: Make sure we correctly replace placeholter numbers.
+
+## Version 0.8.6 (2024043000)
+* New Feature: Add placeholder [[cashandcards]] for sum of non-online payments to daily sum.
+
+## Version 0.8.5 (2024042600)
+* New feature: Unfinished new feature for installment payments (do not use yet!).
+It has been added for testing purposes.
+* Improvement: Big design change - we switched to new price modifiers to manipulate prices if needed.
+* Improvement: Nice styling of installments page.
+* Improvement: Better styling of testing page which has been renamed to demo.php.
+* Improvement: Lots of new tests and improvements to overall code quality.
+
+## Version 0.8.4 (2024041000)
+* Improvement: Users in cashier can now be searched by ID also.
+* Improvement: Allow search for full user ID on cashier's page.
+
+## Version 0.8.3 (2024040200)
+* New feature: Define your own HTML template for the daily sums PDF download.
+* Improvement: Add function to check allowedcancel without db call.
+* Improvement: Add possibility to fetch last historyitem information when no historyid is given.
+* Improvement: Make add to cart button accessible via TAB.
+
+## Version 0.8.2 (2024032500)
+* Improvement: Keep itemid in ledger on rebooking #65.
+
+## Version 0.8.1 (2024032000)
+* Improvement: Fix Filter for new wunderbyte table api.
+* Improvement: Add new schistorid column to ledger.
+* Bugfix: Avoid "Limit" for oracle support.
+* Bugfix: Fix for #63.
+* Bugfix: Second fix for #63 - we need to get currency from config!
+* Bugfix: Make sure we have booking fee when deleting rebooking item.
+
+## Version 0.8.0 (2024031800)
+* New feature: New setting to limit the cash report download file to a certain number of rows.
+* Improvement: don't add booking fee on items with price 0.
+
+## Version 0.7.9 (2024031401)
+* Improvement: Show full terms and conditions.
+* Improvement: Better styling of checkout page.
+
+## Version 0.7.8 (2024031400)
+* New feature: Booked items can now be marked for rebooking and be rebooked into other items.
+This feature can be turned on by activating the setting 'local_shopping_cart | allowrebooking'.
+* Improvement: Add missing language strings.
+* Improvement: Better strings for free payments (when total price is 0).
+* Bugfix: Add missing cache definitions.
+* Bugfix: Fix some styles for images and icons.
+
 ## Version 0.7.7 (2024030600)
 * Bugfix: Don't fail on space in img url for item picture.
 * Bugfix: Set service period on null for booking option without date.
@@ -5,7 +71,7 @@
 ## Version 0.7.6 (2024022300)
 * New Feature: Rebooking credit - If you activate rebooking credit, a user will get refunded the cancelation and booking fee
 if (s)he cancels an item within the cancelation period and books another item.
-* Improvment: Add "Item not bought" event when component feedback fails.
+* Improvement: Add "Item not bought" event when component feedback fails.
 * Improvement: deliver_order on successfull payment if it failed for some reason.
 * Improvement: Check Feedback with success.
 * Bugfix: Function allow_add_item_to_cart needs to respect availability conditions.

@@ -33,17 +33,17 @@ Feature: Test purchase process in shopping cart.
   @javascript
   Scenario: Add an item to the shopping cart
     Given I log in as "user1"
-    And I visit "/local/shopping_cart/test.php"
+    And I visit "/local/shopping_cart/demo.php"
     And I wait until the page is ready
     And I click on "#btn-local_shopping_cart-main-1" "css_element"
     And I click on "#nav-shopping_cart-popover-container" "css_element"
-    Then I should see "my test item 1" in the "ul.shopping-cart-items" "css_element"
-    And I should see "10.00" in the "ul.shopping-cart-items" "css_element"
+    Then I should see "my test item 1" in the "div.shopping-cart-items" "css_element"
+    And I should see "10.00" in the "div.shopping-cart-items" "css_element"
     And I reload the page
     And I wait until the page is ready
     And I click on "#nav-shopping_cart-popover-container" "css_element"
-    Then I should see "my test item 1" in the "ul.shopping-cart-items" "css_element"
-    And I should see "10.00" in the "ul.shopping-cart-items" "css_element"
+    Then I should see "my test item 1" in the "div.shopping-cart-items" "css_element"
+    And I should see "10.00" in the "div.shopping-cart-items" "css_element"
     And I wait "1" seconds
     And I click on ".popover-region-content-container a" "css_element"
     Then I should see "my test item 1" in the "div.checkoutgrid" "css_element"
@@ -52,16 +52,16 @@ Feature: Test purchase process in shopping cart.
   @javascript
   Scenario: Delete item from the shopping cart
     Given I log in as "user1"
-    And I visit "/local/shopping_cart/test.php"
+    And I visit "/local/shopping_cart/demo.php"
     And I wait until the page is ready
     And I click on "#btn-local_shopping_cart-main-1" "css_element"
     And I click on "#nav-shopping_cart-popover-container" "css_element"
-    Then I should see "my test item 1" in the "ul.shopping-cart-items" "css_element"
+    Then I should see "my test item 1" in the "div.shopping-cart-items" "css_element"
     ## And I click on "[data-item=\"shopping_cart_item\"] i.fa.fa-trash-o" "css_element"
     And I click on "[data-itemid=\"1\"] i.fa.fa-trash-o" "css_element"
     And I wait "1" seconds
-    Then I should not see "my test item 1" in the "ul.shopping-cart-items" "css_element"
+    Then I should not see "my test item 1" in the "div.shopping-cart-items" "css_element"
     And I reload the page
     And I wait until the page is ready
     And I click on "#nav-shopping_cart-popover-container" "css_element"
-    Then I should not see "my test item 1" in the "ul.shopping-cart-items" "css_element"
+    Then I should not see "my test item 1" in the "div.shopping-cart-items" "css_element"

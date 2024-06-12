@@ -122,5 +122,18 @@ $functions = [
                 'capabilities' => '',
                 'ajax' => 1,
         ],
+        'local_shopping_cart_mark_item_for_rebooking' => [
+                'classname' => 'local_shopping_cart\external\mark_for_rebooking',
+                'description' => 'Marks history item for rebooking',
+                'type' => 'write',
+                'capabilities' => '',
+                'ajax' => 1,
+        ],
+        'local_shopping_cart_get_history_item' => [
+                'classname' => 'local_shopping_cart\external\get_history_item',
+                'description' => 'Gets the latest history item',
+                'type' => 'read',
+                'capabilities' => '',
+                'ajax' => 1,
+        ],
 ];
-

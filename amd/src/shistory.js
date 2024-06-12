@@ -38,6 +38,7 @@ const SELECTORS = {
     CANCELBUTTON: '.cashier-history-items .shopping_cart_history_cancel_button',
     PAIDBACKBUTTON: 'button.shopping_cart_history_paidback_button',
     CREDITSMANAGER: 'button.shopping_cart_history_creditsmanager',
+    REBOOKBUTTON: '.shopping_cart_history_rebook_button',
 };
 
 // Little hack to get strings at top-level although getString is asynchronous.
@@ -110,6 +111,19 @@ export const init = (cancelationFee = null) => {
             btn.dataset.initialized = true;
         }
     });
+
+    // Mark for rebooking button.
+    const rebookbuttons = document.querySelectorAll(SELECTORS.REBOOKBUTTON);
+    rebookbuttons.forEach(btn => {
+        if (!btn.dataset.initialized) {
+            btn.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                markforrebooking(btn);
+            });
+            btn.dataset.initialized = true;
+        }
+    });
 };
 
 /**
@@ -124,7 +138,7 @@ export const init = (cancelationFee = null) => {
  * @param {string} credit
  * @param {type} button
  */
-function cancelPurchase(itemid, area, userid, componentname, historyid, currency, price, credit, button) {
+export function cancelPurchase(itemid, area, userid, componentname, historyid, currency, price, credit, button) {
 
     Ajax.call([{
         methodname: "local_shopping_cart_cancel_purchase",
@@ -150,6 +164,19 @@ function cancelPurchase(itemid, area, userid, componentname, historyid, currency
                     console.log(e);
                 });
 
+                if (!button) {
+                    import('local_wunderbyte_table/reload')
+                    // eslint-disable-next-line promise/always-return
+                    .then(wbt => {
+                        wbt.reloadAllTables();
+                    })
+                    .catch(err => {
+                            // Handle any errors, including if the module doesn't exist
+                            // eslint-disable-next-line no-console
+                            console.log(err);
+                    });
+                    return;
+                }
                 setButtonToCanceled(button);
 
                 showCredit(data.credit, currency, userid);
@@ -326,7 +353,64 @@ function confirmPaidBack(element) {
  * @param {*} button
  * @param {*} cancelationFee
  */
-function confirmCancelModal(button, cancelationFee) {
+export async function confirmCancelModal(button, cancelationFee) {
+
+    // eslint-disable-next-line no-console
+    console.log(button);
+
+    // If we have no price, but there are all the other values on the button...
+    // ... we first fetch the necessary data.
+    if (!button.dataset.hasOwnProperty('price')) {
+        await new Promise(function(resolve, reject) {
+            Ajax.call([{
+                methodname: 'local_shopping_cart_get_history_item',
+                args: {
+                    'itemid': button.dataset.itemid,
+                    'componentname': button.dataset.componentname,
+                    'area': button.dataset.area,
+                    'userid': button.dataset.userid,
+                },
+                done: function(data) {
+
+                    // eslint-disable-next-line no-console
+                    console.log(data);
+
+                    if (!data.success == 1) {
+                        resolve(data);
+                        return;
+                    }
+
+                    button.dataset.historyid = data.id;
+                    button.dataset.price = data.price;
+                    button.dataset.credit = 0;
+                    button.dataset.currency = data.currency;
+                    button.dataset.quotaconsumed = data.quotaconsumed;
+                    button.dataset.round = data.round;
+                    cancelationFee = data.cancelationfee;
+                    button.dataset.buttontonull = true;
+
+                    resolve(data);
+                },
+                fail: ex => {
+                    // eslint-disable-next-line no-console
+                    console.log("failed to load information for modal: " + JSON.stringify(ex));
+                    reject(ex);
+                }
+            }]);
+        });
+    }
+    if (!button.dataset.hasOwnProperty('price')) {
+        getString('canceldidntwork', 'local_shopping_cart').then(message => {
+
+            showNotification(message, "danger");
+
+            return;
+        }).catch(e => {
+            // eslint-disable-next-line no-console
+            console.log(e);
+        });
+        return;
+    }
 
     // Before showing the cancel modal, we need to gather some information and pass it to the string.
     if (cancelationFee === null) {
@@ -400,6 +484,10 @@ function confirmCancelModal(button, cancelationFee) {
                 const componentname = button.dataset.componentname;
                 const area = button.dataset.area;
                 const price = button.dataset.price;
+
+                if (button.dataset.buttontonull) {
+                    button = null;
+                }
 
                 cancelPurchase(itemid, area, userid, componentname, historyid, currency, price, 0, button);
             });
@@ -532,11 +620,55 @@ function openCreditsManagerModal(button) {
             console.log('credits-manager-modal response: ', response);
             showNotification(creditsmanagersuccess, 'info');
             setTimeout(function() {
-                window.location.reload();
+                reload(e.detail.userid);
             }, 1500);
         }
     });
 
     // Show the form.
     modalForm.show();
+}
+
+/**
+ * Mark booking options for rebooking.
+ * @param {htmlElement} button
+ */
+function markforrebooking(button) {
+
+    // eslint-disable-next-line no-console
+    console.log(button);
+
+    const historyid = button.dataset.historyid;
+    const userid = button.dataset.userid;
+
+    Ajax.call([{
+        methodname: 'local_shopping_cart_mark_item_for_rebooking',
+        args: {
+            historyid,
+            userid
+        },
+        done: function(data) {
+
+            // eslint-disable-next-line no-console
+            console.log(data);
+            window.location.reload();
+
+        },
+        fail: ex => {
+            // eslint-disable-next-line no-console
+            console.log("local_shopping_cart_mark_item_for_rebooking failed: " + JSON.stringify(ex));
+        },
+    }]);
+}
+
+/**
+ * Function to reload current page with get param userid.
+ * @param {*} userid
+ */
+function reload(userid) {
+    const url = new URL(window.location.href);
+
+    url.searchParams.delete('userid');
+    url.searchParams.append('userid', userid);
+    window.location.href = url.toString();
 }

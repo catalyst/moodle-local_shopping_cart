@@ -26,6 +26,7 @@
 use local_shopping_cart\form\daily_sums_date_selector_form;
 use local_shopping_cart\shopping_cart;
 use local_shopping_cart\table\cash_report_table;
+use local_wunderbyte_table\filters\types\standardfilter;
 
 require_once(__DIR__ . '/../../config.php');
 
@@ -99,6 +100,7 @@ if (!empty($account)) {
 
 // If we have open orders tables select statements, we can now UNION them.
 if (!empty($openorderselects)) {
+    // Some clients do not need the default orderid but the custom orderid from the openorders table.
     $customorderid = "oo.tid AS customorderid, ";
     $openorderselectsstring = implode(' UNION ', $openorderselects);
     $customorderidpart = "LEFT JOIN ($openorderselectsstring) oo ON scl.identifier = oo.itemid AND oo.gateway = p.gateway";
@@ -132,8 +134,6 @@ if (!empty($colselects)) {
             "COALESCE(CAST(p.id AS VARCHAR),'X')");
 }
 
-// Some clients do not need the default order id but the custom order id from the openorders table.
-
 // SQL query. The subselect will fix the "Did you remember to make the first column something...
 // ...unique in your call to get_records?" bug.
 $fields = "s1.*";
@@ -152,7 +152,9 @@ $from = "(SELECT DISTINCT " . $uniqueidpart .
         ON u.id = scl.userid
         LEFT JOIN {user} um
         ON um.id = scl.usermodified
-        $gatewayspart ) s1";
+        $gatewayspart
+        ORDER BY scl.id DESC
+        ) s1";
 $where = "1 = 1";
 $params = [];
 
@@ -267,10 +269,8 @@ if ($debug != 2) {
         debugging("TABLE AFTER SORTABLE:<br>$encodedtable", DEBUG_ALL);
     }
 
-    // Filters.
-    $filtercolumns = [];
-    $filtercolumns['payment'] = [
-        'localizedname' => get_string('payment', 'local_shopping_cart'),
+    $standardfilter = new standardfilter('payment', get_string('payment', 'local_shopping_cart'));
+    $standardfilter->add_options([
         LOCAL_SHOPPING_CART_PAYMENT_METHOD_ONLINE =>
             get_string('paymentmethodonline', 'local_shopping_cart'),
         LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER =>
@@ -291,15 +291,19 @@ if ($debug != 2) {
             get_string('paymentmethodcashier:debitcard', 'local_shopping_cart'),
         LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_MANUAL =>
             get_string('paymentmethodcashier:manual', 'local_shopping_cart'),
-    ];
-    $filtercolumns['paymentstatus'] = [
-        'localizedname' => get_string('paymentstatus', 'local_shopping_cart'),
+    ]);
+
+    $table->add_filter($standardfilter);
+
+    $standardfilter = new standardfilter('paymentstatus', get_string('paymentstatus', 'local_shopping_cart'));
+    $standardfilter->add_options([
         LOCAL_SHOPPING_CART_PAYMENT_PENDING => get_string('paymentpending', 'local_shopping_cart'),
         LOCAL_SHOPPING_CART_PAYMENT_ABORTED => get_string('paymentaborted', 'local_shopping_cart'),
         LOCAL_SHOPPING_CART_PAYMENT_SUCCESS => get_string('paymentsuccess', 'local_shopping_cart'),
         LOCAL_SHOPPING_CART_PAYMENT_CANCELED => get_string('paymentcanceled', 'local_shopping_cart'),
-    ];
-    $table->define_filtercolumns($filtercolumns);
+    ]);
+    $table->add_filter($standardfilter);
+
     if ($debug == 3) {
         $encodedtable = json_encode($table);
         debugging("TABLE AFTER FILTERCOLS:<br>$encodedtable", DEBUG_ALL);

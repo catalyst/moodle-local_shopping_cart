@@ -33,7 +33,7 @@ Feature: Cashier actions in shopping cart.
   @javascript
   Scenario: Cashier rewievs an item the shopping cart of user
     Given I log in as "user1"
-    And I visit "/local/shopping_cart/test.php"
+    And I visit "/local/shopping_cart/demo.php"
     And I wait until the page is ready
     And I click on "#btn-local_shopping_cart-main-1" "css_element"
     And I log out
@@ -49,7 +49,7 @@ Feature: Cashier actions in shopping cart.
   @javascript
   Scenario: Cashier adds discount without rounding for user cart item
     Given I log in as "user1"
-    And I visit "/local/shopping_cart/test.php"
+    And I visit "/local/shopping_cart/demo.php"
     And I wait until the page is ready
     And I click on "#btn-local_shopping_cart-main-1" "css_element"
     And I log out
@@ -72,7 +72,7 @@ Feature: Cashier actions in shopping cart.
   @javascript
   Scenario: Cashier adds discount with rounding for user cart item
     Given I log in as "user1"
-    And I visit "/local/shopping_cart/test.php"
+    And I visit "/local/shopping_cart/demo.php"
     And I wait until the page is ready
     And I click on "#btn-local_shopping_cart-main-1" "css_element"
     And I log out
@@ -95,7 +95,7 @@ Feature: Cashier actions in shopping cart.
   @javascript
   Scenario: Cashier buys discounted item (without rounding) for user with cash
     Given I log in as "user1"
-    And I visit "/local/shopping_cart/test.php"
+    And I visit "/local/shopping_cart/demo.php"
     And I wait until the page is ready
     And I click on "#btn-local_shopping_cart-main-1" "css_element"
     And I log out
@@ -115,12 +115,13 @@ Feature: Cashier actions in shopping cart.
     And I click on "#shopping_cart-cashiers-section #checkout-btn" "css_element"
     Then I should see "5.50 EUR" in the "#shopping_cart-cashiers-section .sc_totalprice" "css_element"
     And I click on "#shopping_cart-cashiers-section .btn_cashpayment" "css_element"
+    And I wait "40" seconds
     Then I should see "Payment successful" in the "div.payment_message_result" "css_element"
 
   @javascript
   Scenario: Cashier buys discounted item (with rounding) for user with cash
     Given I log in as "user1"
-    And I visit "/local/shopping_cart/test.php"
+    And I visit "/local/shopping_cart/demo.php"
     And I wait until the page is ready
     And I click on "#btn-local_shopping_cart-main-1" "css_element"
     And I log out
@@ -145,7 +146,7 @@ Feature: Cashier actions in shopping cart.
   @javascript
   Scenario: Cashier buys item for user with cash and cancel purchase with cancellation fee
     Given I log in as "user1"
-    And I visit "/local/shopping_cart/test.php"
+    And I visit "/local/shopping_cart/demo.php"
     And I wait until the page is ready
     And I click on "#btn-local_shopping_cart-main-1" "css_element"
     Given I log in as "admin"
@@ -175,7 +176,7 @@ Feature: Cashier actions in shopping cart.
   @javascript
   Scenario: Cashier buys discounted item for user with cash and cancel purchase with cancellation fee
     Given I log in as "user1"
-    And I visit "/local/shopping_cart/test.php"
+    And I visit "/local/shopping_cart/demo.php"
     And I wait until the page is ready
     And I click on "#btn-local_shopping_cart-main-1" "css_element"
     Given I log in as "admin"

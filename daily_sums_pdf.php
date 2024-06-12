@@ -53,8 +53,37 @@ $PAGE->set_url('/daily_sums_pdf.php');
 $PAGE->set_title('Daily sums');
 $PAGE->set_heading('Daily sums');
 
-$html = $OUTPUT->render_from_template('local_shopping_cart/report_daily_sums_pdf',
-    shopping_cart::get_daily_sums_data($date));
+// Get the daily sums data.
+$data = shopping_cart::get_daily_sums_data($date);
+
+// Calculate the sum of all not-online payments.
+$creditpart = (float) $data['creditcard'] ?? 0.0;
+$debitpart = (float) $data['debitcard'] ?? 0.0;
+$cashpart = (float) $data['cash'] ?? 0.0;
+$cashandcards = number_format($creditpart + $debitpart + $cashpart, 2, $commaseparator, '');
+
+$html = get_config('local_shopping_cart', 'dailysumspdfhtml');
+if (empty($html)) {
+    // No template defined, so use default mustache template.
+    $html = $OUTPUT->render_from_template('local_shopping_cart/report_daily_sums_pdf', $data);
+} else {
+    // Only if HTML template is defined in settings, we use it.
+    // At first, replace all placeholders.
+    $html = str_replace("[[title]]", $data['title'] ?? '', $html);
+    $html = str_replace("[[date]]", $data['date'] ?? '', $html);
+    $html = str_replace("[[printdate]]", $data['printdate'] ?? '', $html);
+    $html = str_replace("[[totalsum]]", $data['totalsum'] ?? '', $html);
+    $html = str_replace("[[currency]]", $data['currency'] ?? '', $html);
+    $html = str_replace("[[online]]", $data['online'] ?? '', $html);
+    $html = str_replace("[[cash]]", $data['cash'] ?? '', $html);
+    $html = str_replace("[[creditcard]]", $data['creditcard'] ?? '', $html);
+    $html = str_replace("[[debitcard]]", $data['debitcard'] ?? '', $html);
+    $html = str_replace("[[manual]]", $data['manual'] ?? '', $html);
+    $html = str_replace("[[creditspaidbackcash]]", $data['creditspaidbackcash'] ?? '', $html);
+    $html = str_replace("[[creditspaidbacktransfer]]", $data['creditspaidbacktransfer'] ?? '', $html);
+    $html = str_replace("[[cashandcards]]", $cashandcards ?? '', $html);
+}
+
 
 // Set document information.
 $pdf->SetCreator(PDF_CREATOR);

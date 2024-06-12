@@ -24,9 +24,16 @@
 
 namespace local_shopping_cart;
 
+defined('MOODLE_INTERNAL') || die();
+
+require_once(__DIR__ . '/../lib.php');
+
+use coding_exception;
 use context_system;
+use dml_exception;
 use Exception;
 use local_shopping_cart\event\payment_added;
+use local_shopping_cart\local\cartstore;
 use moodle_exception;
 use moodle_url;
 use stdClass;
@@ -193,7 +200,9 @@ class shopping_cart_history {
                 ON p.itemid = sch.identifier AND p.userid=sch.userid
                 $customorderidpart
                 $gatewayspart
-                WHERE sch.userid = :userid AND sch.paymentstatus >= :paymentstatus
+                WHERE sch.userid = :userid
+                AND sch.paymentstatus >= :paymentstatus
+                AND NOT (sch.componentname LIKE 'local_shopping_cart' AND sch.area LIKE 'installments%' )
                 ORDER BY sch.timemodified DESC";
 
         $records = $DB->get_records_sql($sql, ['userid' => $userid, 'paymentstatus' => LOCAL_SHOPPING_CART_PAYMENT_SUCCESS]);
@@ -242,19 +251,19 @@ class shopping_cart_history {
      * write_to_db.
      *
      * @param stdClass $data
-     * @return bool true if the history was written to the database, false otherwise
+     * @return int true if the history was written to the database, false otherwise
      *  (e.g. if record already exists)
      */
-    private static function write_to_db(stdClass $data): bool {
+    private static function write_to_db(stdClass $data): int {
         global $DB, $USER;
 
         $now = time();
 
-        $success = true;
+        $returnid = 0;
         if (isset($data->items)) {
             foreach ($data->items as $item) {
-                if (!self::write_to_db((object)$item)) {
-                    $success = false;
+                if (self::write_to_db((object)$item) == 0) {
+                    $returnid = 0;
                 }
             }
         } else if ($data->itemid === 0) {
@@ -274,7 +283,17 @@ class shopping_cart_history {
 
                 if ($id = $DB->insert_record('local_shopping_cart_history', $data)) {
                     // We also need to insert the record into the ledger table.
-                    shopping_cart::add_record_to_ledger_table($data);
+                    // We only write the old schistoryid, if we have it.
+                    $data->schistoryid = $data->schistoryid ?? $id;
+
+                    /* There is one exception, when we don't write to ledger.
+                     The reason is that we want to write installments in a separate process.
+                     if (!($data->componentname === 'local_shopping_cart'
+                         && strpos($data->area, 'installments') !== false)) {
+
+                         shopping_cart::add_record_to_ledger_table($data);
+                     }
+                    */
                     $success = true;
 
                     $context = context_system::instance();
@@ -292,20 +311,21 @@ class shopping_cart_history {
                     ]);
 
                     $event->trigger();
+
+                    $returnid = $id;
                 } else {
-                    $success = false;
+                    $returnid = 0;
                 }
             } else {
-                $success = false;
+                $returnid = 0;
             }
         }
-        return $success;
+        return $returnid;
     }
 
     /**
      * Add new entry to shopping_cart_history.
      * Use this if you add data manually, to check for validity.
-     *
      * @param int $userid
      * @param int $itemid
      * @param string $itemname
@@ -318,15 +338,20 @@ class shopping_cart_history {
      * @param string $payment
      * @param int $paymentstatus
      * @param int|null $canceluntil
-     * @param int|null $serviceperiodstart
-     * @param int|null $serviceperiodend
+     * @param int $serviceperiodstart
+     * @param int $serviceperiodend
      * @param float|null $tax
      * @param float|null $taxpercentage
      * @param string|null $taxcategory
      * @param string|null $costcenter
      * @param string|null $annotation
      * @param int|null $usermodified
-     * @return void
+     * @param int|null $schistoryid
+     * @param int|null $installments
+     * @param string|null $json
+     * @return int
+     * @throws dml_exception
+     * @throws coding_exception
      */
     public static function create_entry_in_history(
             int $userid,
@@ -348,8 +373,10 @@ class shopping_cart_history {
             string $taxcategory = null,
             string $costcenter = null,
             string $annotation = null,
-            int $usermodified = null
-    ) {
+            int $usermodified = null,
+            int $schistoryid = null,
+            int $installments = null,
+            string $json = null) {
 
         global $USER;
 
@@ -378,6 +405,9 @@ class shopping_cart_history {
         $data->taxcategory = $taxcategory;
         $data->costcenter = $costcenter;
         $data->annotation = $annotation;
+        $data->schistoryid = $schistoryid;
+        $data->installments = $installments;
+        $data->json = $json;
 
         return self::write_to_db($data);
     }
@@ -552,7 +582,7 @@ class shopping_cart_history {
      */
     public static function set_success_in_db(array $records): bool {
 
-        global $DB;
+        global $DB, $USER;
 
         $success = true;
         $identifier = null;
@@ -563,14 +593,71 @@ class shopping_cart_history {
             $record->paymentstatus = LOCAL_SHOPPING_CART_PAYMENT_SUCCESS;
             $record->timemodified = $now;
 
-            if (!$DB->update_record('local_shopping_cart_history', $record)) {
-                $success = false;
+            $areaarray = explode('-', $record->area);
+            $area = $areaarray[0];
+            $addinfo = $areaarray[1] ?? null;
+
+            if ($record->componentname === 'local_shopping_cart'
+            && $area === 'installments') {
+
+                // We retrieve the item from history and update it for the installments.
+                $historyitem = self::return_item_from_history($record->itemid);
+                // Now we manipulate our entry to have a correct ledger.
+                $ledgerrecord = $record;
+                $ledgerrecord->itemid = $historyitem->itemid;
+                $ledgerrecord->area = $historyitem->area;
+                $ledgerrecord->componentname = $historyitem->componentname;
+                $ledgerrecord->usermodified = $USER->id;
+                $ledgerrecord->timecreated = $now;
+
+                // Get Information about the current payment.
+                $jsonobject = json_decode($historyitem->json);
+                foreach ($jsonobject->installments->payments as $key => $payment) {
+                    if ($payment->id == $addinfo) {
+                        $jsonobject->installments->payments[$key]->paid = 1;
+                        $a = $payment; // This is the payment which is currently treated.
+                    }
+                }
+
+                // Still some additional Info for the ledger.
+                $ledgerrecord->schistoryid = $historyitem->id;
+                $ledgerrecord->annotation =
+                    get_string('ledgerinstallment', 'local_shopping_cart', $a);
+
+                // Now we manipulate the orignal entry.
+                $newrecord = $historyitem;
+                $newrecord->price += $record->price;
+                $newrecord->tax += $record->tax;
+                $newrecord->timemodified = $record->timemodified;
+                $newrecord->installments--;
+                $newrecord->json = json_encode($jsonobject);
+
+                $record = $newrecord;
             } else {
+                $record->schistoryid = $record->id;
+            }
+
+            // If until now we have no ledger record, we duplicate from record.
+            if (empty($ledgerrecord)) {
+                $ledgerrecord = $record;
+            }
+
+            if (empty($record->id)) {
+                if (!$DB->insert_record('local_shopping_cart_history', $record)) {
+                    $success = false;
+                }
+
+            } else if (!$DB->update_record('local_shopping_cart_history', $record)) {
+                $success = false;
+            }
+
+            if ($success) {
+
                 // Only on payment success, we add a new record to the ledger table!
-                unset($record->id);
+                unset($ledgerrecord->id);
 
                 // We always use this function to add a new record to the ledger table!
-                shopping_cart::add_record_to_ledger_table($record);
+                shopping_cart::add_record_to_ledger_table($ledgerrecord);
             }
         }
 
@@ -582,7 +669,7 @@ class shopping_cart_history {
     }
 
     /**
-     * Function prepare_data_from_cache
+     * Function prepare_data_from_cache and store it in the session cache of the user.
      *
      * @param int $userid
      * @param int $identifier optional identifier
@@ -593,38 +680,18 @@ class shopping_cart_history {
 
         $userfromid = $USER->id;
         $userid = $USER->id;
-        $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-        $cachekey = $userid . '_shopping_cart';
+        $cartstore = cartstore::instance($userid);
+        $cachedrawdata = $cartstore->get_data();
         $dataarr = [];
-
-        $taxesenabled = get_config('local_shopping_cart', 'enabletax') == 1;
-        if ($taxesenabled) {
-            $taxcategories = taxcategories::from_raw_string(
-                    get_config('local_shopping_cart', 'defaulttaxcategory'),
-                    get_config('local_shopping_cart', 'taxcategories')
-            );
-        } else {
-            $taxcategories = null;
-        }
-
-        if (!$cachedrawdata = $cache->get($cachekey)) {
-            return ['identifier' => ''];
-        }
-
-        $currency = '';
-        if (!isset($cachedrawdata["items"])) {
-            $cachedrawdata["items"] = [];
-        }
 
         if (empty($identifier)) {
             $identifier = self::create_unique_cart_identifier($userid);
         }
 
-        $items = shopping_cart::update_item_price_data(array_values($cachedrawdata['items']), $taxcategories);
-        foreach ($items as $item) {
+        foreach ($cachedrawdata['items'] as $item) {
             $data = $item;
-            $currency = $item['currency'];
-            $data['expirationtime'] = $cachedrawdata["expirationdate"];
+            $data['currency'] = $item['currency'];
+            $data['expirationtime'] = $cachedrawdata["expirationtime"];
             $data['identifier'] = $identifier; // The identifier of the cart session.
             $data['usermodified'] = $userfromid; // The user who actually effected the transaction.
             $data['userid'] = $userid; // The user for which the item was bought.
@@ -634,17 +701,15 @@ class shopping_cart_history {
             $dataarr['items'][] = $data;
         }
 
+        $dataarr['price'] = $cachedrawdata['price'];
+        $dataarr['price_net'] = $cachedrawdata['price_net'];
+        $dataarr['currency'] = $cachedrawdata['currency'];
+
         // As the identifier will always stay the same, we pass it here for easy acces.
         $dataarr['identifier'] = $identifier;
-        if (!empty($items)) {
-            $dataarr['price'] = shopping_cart::calculate_total_price($dataarr["items"]);
-            if ($taxesenabled) {
-                $dataarr['price_net'] = shopping_cart::calculate_total_price($dataarr["items"], true);
-            }
-        } else {
-            $dataarr['price'] = 0.00;
-        }
-        $dataarr['currency'] = $currency;
+
+        $this->store_in_schistory_cache($dataarr);
+
         return $dataarr;
     }
 
@@ -735,16 +800,41 @@ class shopping_cart_history {
      * Return an item for shopping card history table via the historyid.
      *
      * @param int $historyid
-     * @param int $itemid
-     * @param string $area
-     * @param int $userid
      * @return bool|stdClass
      */
-    public static function return_item_from_history(int $historyid, int $itemid, string $area, int $userid) {
+    public static function return_item_from_history(int $historyid) {
         global $DB;
 
         return $DB->get_record('local_shopping_cart_history',
-            ['id' => $historyid, 'itemid' => $itemid, 'area' => $area, 'userid' => $userid]);
+            ['id' => $historyid]);
+    }
+
+    /**
+     * Returns the most recent uncancelled history item.
+     * @param string $componentname
+     * @param string $area
+     * @param int $itemid
+     * @param int $userid
+     * @return stdClass
+     * @throws dml_exception
+     */
+    public static function get_most_recent_historyitem(string $componentname, string $area, int $itemid, int $userid) {
+        global $DB;
+
+        $record = $DB->get_record('local_shopping_cart_history',
+            [
+                'componentname' => $componentname,
+                'area' => $area,
+                'itemid' => $itemid,
+                'userid' => $userid,
+                'paymentstatus' => LOCAL_SHOPPING_CART_PAYMENT_SUCCESS,
+            ]);
+
+        if (!empty($record)) {
+            return $record;
+        }
+
+        return (object)[];
     }
 
     /**
@@ -767,5 +857,140 @@ class shopping_cart_history {
 
         return $DB->get_records('local_shopping_cart_history',
             ['itemid' => $itemid, 'componentname' => $component, 'area' => $area, 'userid' => $userid]);
+    }
+
+    /**
+     * Marks an item for rebooking.
+     * @param int $historyid
+     * @param int $userid
+     * @param bool $remove can be set to true, if we already know that we remove
+     * @return array
+     */
+    public static function toggle_mark_for_rebooking(int $historyid, int $userid, bool $remove = null): array {
+
+        $userid = shopping_cart::set_user($userid);
+
+        $cachekey = 'rebook_userid_' . $userid;
+        $cache = \cache::make('local_shopping_cart', 'cacherebooking');
+
+        $marked = 1;
+        // First, we see if we have sth in the cache.
+        if ((($itemstorebook = $cache->get($cachekey))
+            && is_array($itemstorebook)) || $remove) {
+
+            if (in_array($historyid, $itemstorebook) || $remove) {
+                $itemstorebook = array_filter($itemstorebook, fn($a) => $a != $historyid);
+                $marked = 0;
+                shopping_cart::delete_item_from_cart('local_shopping_cart', 'rebookitem', $historyid, $userid);
+
+                $cartstore = cartstore::instance($userid);
+
+                if (!$cartstore->is_rebooking()) {
+                    $cartstore->delete_rebookingfee();
+                }
+
+            } else {
+                // If so, decide if a add or remove.
+                $itemstorebook[] = $historyid;
+            }
+        } else {
+            $itemstorebook = [$historyid];
+        }
+
+        $cache->set($cachekey, $itemstorebook);
+
+        if (!empty($marked) && empty($remove)) {
+            // Before we add the item to the cart, let's make sure there is no booking fee currently applied.
+            shopping_cart_rebookingcredit::delete_booking_fee($userid);
+
+            shopping_cart::add_item_to_cart('local_shopping_cart', 'rebookitem', $historyid, $userid);
+
+            if (get_config('local_shopping_cart', 'rebookingfee') > 0) {
+                // We check if we need to add the rebookingfee.
+                $record = self::return_item_from_history($historyid);
+                $now = time();
+
+                if ($record->canceluntil <= $now) {
+                    shopping_cart::add_item_to_cart('local_shopping_cart', 'rebookingfee', 1, $userid);
+                }
+            }
+        }
+
+        // Else we return the toggled value.
+        return ['marked' => $marked];
+    }
+
+    /**
+     * Return true or false, depending on item.
+     * @param int $historyid
+     * @param mixed $userid
+     * @return true
+     * @throws coding_exception
+     * @throws dml_exception
+     */
+    public static function is_marked_for_rebooking(int $historyid, $userid) {
+
+        $cachekey = 'rebook_userid_' . $userid;
+        $cache = \cache::make('local_shopping_cart', 'cacherebooking');
+
+        if (($markeditems = $cache->get($cachekey))
+            && is_array($markeditems)
+            && in_array($historyid, $markeditems)) {
+            return true;
+        }
+
+        return false;
+
+    }
+
+    /**
+     * Gets list of items to rebook.
+     * @param mixed $userid
+     * @return array|void
+     * @throws coding_exception
+     */
+    public static function return_list_of_items_to_rebook($userid) {
+
+        global $DB;
+
+        $cachekey = 'rebook_userid_' . $userid;
+        $cache = \cache::make('local_shopping_cart', 'cacherebooking');
+
+        if (($markeditems = $cache->get($cachekey))
+            && is_array($markeditems)) {
+
+            list($inorequal, $params) = $DB->get_in_or_equal($markeditems, SQL_PARAMS_NAMED);
+            $sql = "SELECT *
+                    FROM {local_shopping_cart_history}
+                    WHERE id $inorequal";
+
+            $records = $DB->get_record_sql($sql, $params);
+
+            return $records;
+        } else {
+            return [];
+        }
+
+    }
+
+    /**
+     * Check for successful checkout via identifier.
+     * @param int $identifier
+     * @return bool
+     */
+    public static function has_successful_checkout(int $identifier) {
+        // Make sure we actually have a success.
+        $success = false;
+        if ($records = self::return_data_via_identifier($identifier)) {
+            foreach ($records as $record) {
+                if (LOCAL_SHOPPING_CART_PAYMENT_SUCCESS == $record->paymentstatus) {
+                    $success = true;
+                } else {
+                    $success = false;
+                }
+
+            }
+        }
+        return $success;
     }
 }

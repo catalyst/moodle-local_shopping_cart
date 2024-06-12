@@ -32,47 +32,79 @@
     Example context (json):
     {
         "userid": 3,
-        "urls": {
-            "preferences": "http://www.moodle.com"
-        }
+        "credit": 10,
+        "initialtotal": 44.4,
+        "currency": "EUR",
+        "discount": 10,
+        "checkboxid": "cbid",
+        "usecredit": 1,
+        "installmentscheckboxid": "ichk",
+        "useinstallments": 0,
+        "deductible": 10,
+        "discount": 1,
+        "initialtotal": 10,
+        "price_net": 10,
+        "taxesenabled": 1
     }
-
 }}
 
 
 <div>
-    {{#credit}}
-        <div class="text-center sc_initialtotal">{{#str}} initialtotal, local_shopping_cart {{/str}} {{initialtotal}} {{currency}}</div>
-        {{#discount}}
-            <div class="text-center sc_discount">{{#str}} discount, local_shopping_cart {{/str}}: -{{discount}} {{currency}}</div>
-        {{/discount}}
-        <div class="text-center sc_credit">
+    {{#installmentscheckboxid}}
+        <div class="text-right mr-3 sc_installments">
             <div class="custom-control custom-checkbox">
-                <input type="checkbox" class="custom-control-input usecredit-checkbox" id="{{checkboxid}}" xxx {{#usecredit}} checked {{/usecredit}}>
+            <input type="checkbox" class="custom-control-input useinstallments-checkbox" id="{{installmentscheckboxid}}" {{#useinstallments}} checked {{/useinstallments}}>
+                <label class="custom-control-label" for="{{installmentscheckboxid}}">
+                    {{#str}} useinstallments, local_shopping_cart {{/str}}
+                </label>
+            </div>
+            {{#installments}}
+                <div class="itemname font-weight-bold">
+                    {{#str}} downpayment, local_shopping_cart {{/str}} {{#str}}for, local_shopping_cart{{/str}} {{itemname}}:
+                </div>
+                <div class="firstpayment">
+                    {{initialpayment}} {{currency}} {{#str}} insteadof, local_shopping_cart {{/str}} {{originalprice}} {{currency}}
+                </div>
+                <div class="furtherpayments mt-1">
+                    <i>{{#str}} furtherpayments, local_shopping_cart {{/str}}</i>:
+                    {{#payments}}
+                        <div>{{price}} {{currency}} {{#str}} on, local_shopping_cart {{/str}} {{date}} </div>
+                    {{/payments}}
+                </div>
+            {{/installments}}
+        </div>
+    {{/installmentscheckboxid}}
+    {{#credit}}
+        <div class="text-right mr-3 sc_initialtotal">{{#str}} initialtotal, local_shopping_cart {{/str}} {{initialtotal}} {{currency}}</div>
+        {{#discount}}
+            <div class="text-right mr-3 sc_discount">{{#str}} discount, local_shopping_cart {{/str}}: -{{discount}} {{currency}}</div>
+        {{/discount}}
+        <div class="text-right mr-3 sc_credit">
+            <div class="custom-control custom-checkbox">
+                <input type="checkbox" class="custom-control-input usecredit-checkbox" id="{{checkboxid}}" {{#usecredit}} checked {{/usecredit}}>
                 <label class="custom-control-label" for="{{checkboxid}}">
                     {{#str}} usecredit, local_shopping_cart {{/str}} {{credit}} {{currency}}
                 </label>
             </div>
         </div>
-        <div class="text-center sc_deductible">{{#str}} deductible, local_shopping_cart {{/str}} {{deductible}} {{currency}}</div>
-        <div class="text-center sc_remainingcredit">{{#str}} remainingcredit, local_shopping_cart {{/str}} {{remainingcredit}} {{currency}}</div>
+        <div class="text-right mr-3 sc_deductible">{{#str}} deductible, local_shopping_cart {{/str}} {{deductible}} {{currency}}</div>
+        <div class="text-right mr-3 sc_remainingcredit">{{#str}} remainingcredit, local_shopping_cart {{/str}} {{remainingcredit}} {{currency}}</div>
     {{/credit}}
 
     {{^credit}}
         {{#discount}}
-            <div class="text-center sc_initialtotal">{{#str}} initialtotal, local_shopping_cart {{/str}} {{initialtotal}} {{currency}}</div>
-            <div class="text-center sc_discount">{{#str}} discount, local_shopping_cart {{/str}}: -{{discount}} {{currency}}</div>
+            <div class="text-right mr-3 sc_initialtotal">{{#str}} initialtotal, local_shopping_cart {{/str}} {{initialtotal}} {{currency}}</div>
+            <div class="text-right mr-3 sc_discount">{{#str}} discount, local_shopping_cart {{/str}}: -{{discount}} {{currency}}</div>
         {{/discount}}
     {{/credit}}
 
     {{! prices have tax info}}
     {{#taxesenabled}}
-
-        <div class="pull-right text-right mr-3">
+        <div class="text-right mr-3">
             {{#price_net}}
                 <span>{{#str}} total_net, local_shopping_cart {{/str}}</span>
                 <span class="sc_totalprice_net">{{price_net}} {{currency}}</span>
-                <br/>
+                <br>
             {{/price_net}}
             <span>{{#str}} total, local_shopping_cart {{/str}}</span>
             <span class="sc_totalprice"><b>{{price}} {{currency}}</b></span>
@@ -81,10 +113,9 @@
 
     {{! prices without tax information }}
     {{^taxesenabled}}
-
-        <div class="pull-right mr-3">
-            <span>{{#str}} total, local_shopping_cart {{/str}}</span>
-            <span class="sc_totalprice"><b>{{price}} {{currency}}</b></span>
+        <div class="text-right mt-1 mr-3">
+            <span><b>{{#str}} total, local_shopping_cart {{/str}}</b></span>
+            <span class="sc_totalprice text-success"><b>{{price}} {{currency}}</b></span>
         </div>
     {{/taxesenabled}}
 </div>

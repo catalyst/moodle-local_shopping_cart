@@ -46,7 +46,7 @@ Feature: User cancellation after cash payment on the checkout page.
     And I should see "20.30 EUR" in the ".checkoutgrid.checkout #item-local_shopping_cart-main-2 .item-price" "css_element"
     And I click on ".checkoutgrid [data-itemid=\"2\"] i.fa.fa-trash-o" "css_element"
     And I wait "1" seconds
-    And I should not see "my test item 2" in the "ul.shopping-cart-items" "css_element"
+    And I should not see "my test item 2" in the "div.shopping-cart-items" "css_element"
     ## Price
     And I should see "10.00 EUR" in the ".sc_price_label .sc_initialtotal" "css_element"
     ## Used credit
@@ -56,11 +56,17 @@ Feature: User cancellation after cash payment on the checkout page.
     ## Remaining credit
     And I should see "40.00 EUR" in the ".sc_price_label .sc_remainingcredit" "css_element"
     And I should see "0 EUR" in the ".sc_totalprice" "css_element"
-    Then I press "Checkout"
+    When I press "Checkout"
     And I wait "1" seconds
     And I press "Confirm"
     And I wait until the page is ready
-    And I should see "Payment successful!"
+    Then I should see "Payment successful!"
     And I should see "my test item 1" in the ".payment-success ul.list-group" "css_element"
     And I should not see "my test item 2" in the ".payment-success ul.list-group" "css_element"
+    And I log out
+    And I log in as "admin"
+    And I visit "/local/shopping_cart/report.php"
+    And the following should exist in the "cash_report_table" table:
+      | Paid  | Item name      | E-Mail                     | Status  |
+      | 10.00 | my test item 1 | toolgenerator1@example.com | Success |
     And I log out

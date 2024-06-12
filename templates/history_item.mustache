@@ -93,7 +93,10 @@
         <i class="fa fa-th-list" aria-hidden="true"></i>&nbsp;{{#str}} receipt, local_shopping_cart {{/str}}
     </a>
     {{/canceled}}
-    <button type="button" class="shopping_cart_history_cancel_button btn btn-sm pull-left {{buttonclass}}"
+    {{> local_shopping_cart/button_cancel }}
+    {{#showrebooking}}
+    <button type="button"
+        class="shopping_cart_history_rebook_button btn btn-sm pull-left {{#rebooking}}btn-warning{{/rebooking}} {{buttonclass}} "
         data-historyid="{{id}}"
         data-componentname="{{componentname}}"
         data-area="{{area}}"
@@ -104,11 +107,13 @@
         data-price="{{price}}"
         data-round="{{round}}"
         data-quotaconsumed="{{quotaconsumed}}">
-        {{#canceled}}
-            {{#str}} canceled, local_shopping_cart {{/str}}
-        {{/canceled}}
-        {{^canceled}}
-            <i class="fa fa-ban" aria-hidden="true"></i>&nbsp;{{#str}} cancelpurchase, local_shopping_cart {{/str}}
-        {{/canceled}}
+        <i class="fa fa-recycle" aria-hidden="true"></i>&nbsp;
+        {{#rebooking}}
+            {{#str}} markedforrebooking, local_shopping_cart {{/str}}
+        {{/rebooking}}
+        {{^rebooking}}
+            {{#str}} markforrebooking, local_shopping_cart {{/str}}
+        {{/rebooking}}
     </button>
+    {{/showrebooking}}
 </li>

@@ -23,8 +23,10 @@
  * @license         http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later.
  */
 
+use core\plugininfo\cachestore;
+use local_shopping_cart\local\cartstore;
+use local_shopping_cart\local\pricemodifier\modifiers\checkout;
 use local_shopping_cart\output\shoppingcart_history_list;
-use local_shopping_cart\payment\service_provider;
 use local_shopping_cart\shopping_cart;
 use local_shopping_cart\shopping_cart_bookingfee;
 use local_shopping_cart\shopping_cart_history;
@@ -67,7 +69,10 @@ if (empty($jsononly)) {
 }
 
 $userid = $USER->id;
-$data = shopping_cart::local_shopping_cart_get_cache_data($userid);
+
+$cartstore = cartstore::instance($userid);
+$data = $cartstore->get_data();
+
 $data["mail"] = $USER->email;
 $data["name"] = $USER->firstname . $USER->lastname;
 $data["userid"] = $USER->id;
@@ -77,17 +82,7 @@ if (isset($identifier)) {
     $historylist = new shoppingcart_history_list($userid, $identifier);
     $historylist->insert_list($data);
 
-    // Make sure we actually have a success.
-    if ($records = shopping_cart_history::return_data_via_identifier($identifier)) {
-        foreach ($records as $record) {
-            if (LOCAL_SHOPPING_CART_PAYMENT_SUCCESS == $record->paymentstatus) {
-                $success = true;
-            } else {
-                $success = false;
-            }
-
-        }
-    }
+    $sucess = shopping_cart_history::has_successful_checkout($identifier);
 }
 
 if (isset($success)) {
@@ -121,37 +116,27 @@ if (isset($success)) {
     $historylist->insert_list($data);
 
     // Here we are before checkout.
-    $expirationtimestamp = shopping_cart::get_expirationdate();
+    $expirationtime = shopping_cart::get_expirationtime();
 
-    // Make sure we have the fee (if we need it!).
-    shopping_cart_bookingfee::add_fee_to_cart($userid);
+    // Only if there are items in the cart, we check if we need to add booking fee.
+    $cartstore = cartstore::instance($userid);
+
+    // TODO: @georgmaisser Empty if statement, so I had to comment this out.
+    // Is this still needed?
+    // phpcs:ignore Squiz.PHP.CommentedOutCode.Found
+    /* if ($cartstore->has_items()) {
+        // Make sure we have the fee (if we need it!).
+        // shopping_cart_bookingfee::add_fee_to_cart($userid);
+    } */
 
     // Add or reschedule all delete_item_tasks for all the items in the cart.
-    shopping_cart::add_or_reschedule_addhoc_tasks($expirationtimestamp, $userid);
+    shopping_cart::add_or_reschedule_addhoc_tasks($expirationtime, $userid);
 
-    $history = new shopping_cart_history();
-    $scdata = $history->prepare_data_from_cache($userid);
-
-    $history->store_in_schistory_cache($scdata);
-
-    $sp = new service_provider();
-
-    $data['identifier'] = $scdata['identifier'];
-    $data['wwwroot'] = $CFG->wwwroot;
-
-    if (empty($data['currency'])) {
-        $data['currency'] = $scdata['currency'] ?? '';
-    }
-
-    $data['successurl'] = $sp->get_success_url('shopping_cart', (int)$scdata['identifier'])->out(false);
-
-    $data['usecreditvalue'] = $data['usecredit'] == 1 ? 'checked' : '';
-
-    // Show the terms.
-    if (get_config('local_shopping_cart', 'accepttermsandconditions')) {
-        $data['termsandconditions'] = get_config('local_shopping_cart', 'termsandconditions');
-    }
-
+    $cartstore = cartstore::instance($userid);
+    $data = $cartstore->get_data();
+    // The modifier "checkout" prepares our data for the checkout page.
+    // During this process,the new identifier is created, if necessary.
+    checkout::prepare_checkout($data);
 }
 
 if (empty($jsononly)) {

@@ -26,6 +26,7 @@
 namespace local_shopping_cart;
 
 use context_system;
+use local_shopping_cart\local\cartstore;
 use moodle_exception;
 use stdClass;
 
@@ -49,7 +50,7 @@ class shopping_cart_credits {
         global $CFG, $DB;
 
         // Just in case, we do not find it in credits table.
-        $currency = shopping_cart::get_latest_currency_from_history();
+        $currency = get_config('local_shopping_cart', 'globalcurrency') ?? 'EUR';
 
         $currencies = self::credits_get_used_currencies($userid);
         if (empty($currencies)) {
@@ -119,9 +120,17 @@ class shopping_cart_credits {
         }
 
         $data['initialtotal'] = $data['price'];
+
+        // Prices can never be negative, so we use 0 in this case.
+
+        $pricebelowzero = shopping_cart_rebookingcredit::correct_total_price_for_rebooking($data);
+        $usecredit = $pricebelowzero ? 0 : $usecredit;
+        $balance = $pricebelowzero ? 0 : $balance;
+
         if (isset($data['price_net'])) {
             $data['initialtotal_net'] = $data['price_net'];
         }
+
         $data['currency'] = $currency ?: $data['currency'];
 
         // Now we account for discounts.
@@ -211,15 +220,10 @@ class shopping_cart_credits {
 
         if ($newbalance > 0) {
             // We add the right cache.
-            $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-            $cachekey = $userid . '_shopping_cart';
 
-            $cachedrawdata = $cache->get($cachekey);
-            if ($cachedrawdata) {
-                $cachedrawdata['credit'] = round($newbalance, 2);
-                $cachedrawdata['currency'] = $currency;
-                $cache->set($cachekey, $cachedrawdata);
-            }
+            $cartstore = cartstore::instance($userid);
+            $cartstore->set_credit($newbalance, $currency);
+
         }
 
         return [$newbalance, $currency];
@@ -250,16 +254,8 @@ class shopping_cart_credits {
 
         $DB->insert_record('local_shopping_cart_credits', $data);
 
-        // We always have to add the cache.
-        $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-        $cachekey = $userid . '_shopping_cart';
-
-        $cachedrawdata = $cache->get($cachekey);
-        if ($cachedrawdata) {
-            $cachedrawdata['credit'] = round($data->balance, 2);
-            $cachedrawdata['currency'] = $data->currency;
-            $cache->set($cachekey, $cachedrawdata);
-        }
+        $cartstore = cartstore::instance($userid);
+        $cartstore->set_credit($data->balance, $data->currency);
     }
 
     /**
@@ -348,7 +344,7 @@ class shopping_cart_credits {
             $tempusecredit = shopping_cart::get_saved_usecredit_state($userid);
             if ($tempusecredit === null) {
                 // If nothing is saved, we fall back to true.
-                $usecredit = true;
+                $usecredit = 1;
             } else {
                 $usecredit = $tempusecredit;
             }

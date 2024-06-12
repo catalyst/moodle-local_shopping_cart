@@ -26,6 +26,8 @@
 namespace local_shopping_cart\output;
 
 use context_system;
+use local_shopping_cart\local\rebookings;
+use local_shopping_cart\local\cartstore;
 use local_shopping_cart\shopping_cart;
 use local_shopping_cart\shopping_cart_history;
 use moodle_url;
@@ -112,6 +114,8 @@ class shoppingcart_history_list implements renderable, templatable {
 
         $this->taxesenabled = get_config('local_shopping_cart', 'enabletax') == 1;
 
+        $now = time();
+
         // We transform the stdClass from DB to array for template.
         foreach ($items as $item) {
 
@@ -136,12 +140,20 @@ class shoppingcart_history_list implements renderable, templatable {
                 $item->canceluntilstring = date('Y-m-d', $item->canceluntil);
 
                 if (!$iscashier) {
-                    if (shopping_cart::allowed_to_cancel($item->id, $item->itemid, $item->area ?: "", $item->userid)) {
-                        if (!empty($item->canceluntil)) {
+                    // The allowed_to_cancel function only checks if cancelling is disabled, it does not check canceluntil!
+                    if (shopping_cart::allowed_to_cancel($item->id, $item->itemid, $item->area ?? "", $item->userid)) {
+                        if (empty($item->canceluntil)) {
+                            // There is no canceluntil, so we can cancel.
+                            $item->buttonclass = 'btn-primary';
+                        } else if ($now <= $item->canceluntil) {
+                            // There is a canceluntil, but it has not yet passed.
                             $item->canceluntilalert = get_string('youcancanceluntil', 'local_shopping_cart',
                                 $item->canceluntilstring);
+                            $item->buttonclass = 'btn-primary';
+                        } else {
+                            $item->canceluntilalert = get_string('youcannotcancelanymore', 'local_shopping_cart');
+                            $item->buttonclass = 'disabled hidden';
                         }
-                        $item->buttonclass = 'btn-primary';
                     } else {
                         $item->canceluntilalert = get_string('youcannotcancelanymore', 'local_shopping_cart');
                         $item->buttonclass = 'disabled hidden';
@@ -199,6 +211,17 @@ class shoppingcart_history_list implements renderable, templatable {
                     break;
             }
 
+            if (get_config('local_shopping_cart', 'allowrebooking')) {
+                // Get the marked information.
+                $item->rebooking = shopping_cart_history::is_marked_for_rebooking($item->id, $userid);
+
+                if (rebookings::allow_rebooking($item, $userid)) {
+                    $item->showrebooking = true; // If it is shown at all.
+                } else {
+                    $item->showrebooking = null; // So we can hide it in mustache template.
+                }
+            }
+
             $this->historyitems[] = (array)$item;
 
         }
@@ -210,7 +233,8 @@ class shoppingcart_history_list implements renderable, templatable {
             }
         }
 
-        $data = shopping_cart::local_shopping_cart_get_cache_data($userid);
+        $cartstore = cartstore::instance($userid);
+        $data = $cartstore->get_data();
         $this->credit = $data['credit'];
     }
 
@@ -309,7 +333,7 @@ class shoppingcart_history_list implements renderable, templatable {
      *
      * @return [type]
      */
-    private static function add_round_config(stdClass &$item) {
+    public static function add_round_config(stdClass &$item) {
 
         if ($round = get_config('local_shopping_cart', 'rounddiscounts')) {
             $item->round = $round == 1 ? true : false;

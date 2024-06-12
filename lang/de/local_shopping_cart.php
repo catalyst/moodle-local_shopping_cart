@@ -30,13 +30,12 @@ $string['modulename'] = 'Warenkorb';
 
 // General strings.
 $string['addtocart'] = 'In den Warenkorb';
-$string['allowrebookingcredit'] = 'Umbuchungsgutschrift';
-$string['allowrebookingcredit_desc'] = 'Wenn Sie die Umbuchungsgutschrift aktivieren, bekommt ein:e Nutzer:in eine Gutschrift in Höhe der Buchungs- und Stornogebühr gutgeschrieben,
-wenn er:sie innerhalb der Stornofrist ein Item storniert und ein anderes bucht.';
 $string['cash'] = 'Bargeld';
 $string['choose...'] = 'Auswählen...';
 $string['mycart'] = 'Mein Warenkorb';
+$string['nolimit'] = 'Kein Limit';
 $string['optioncancelled'] = 'Buchungsoption storniert';
+$string['rebooking'] = 'Umbuchung';
 $string['rebookingcredit'] = 'Umbuchungsgutschrift';
 $string['sendpaymentbutton'] = 'Zur Bezahlung';
 $string['showorderid'] = 'Order-ID anzeigen...';
@@ -51,6 +50,8 @@ $string['expirationtime:description'] = 'Wie lange darf sich eine Buchung maxima
 $string['cancelationfee'] = 'Stornierungsgebühr';
 $string['bookingfee'] = 'Buchungsgebühr';
 $string['bookingfee_desc'] = 'Für jede Buchung wird eine Gebühr eingehoben, unabhängig davon, wieviele Artikel gekauft werden und wieiviel sie kosten.';
+$string['rebookingfee'] = 'Umbuchungsgebühr';
+$string['rebookingfee_desc'] = 'Für jede Umbuchung wird eine Gebühr eingehoben, wenn die normale Stornoperiode vorbei ist.';
 $string['uniqueidentifier'] = 'Eindeutige Buchungsid';
 $string['uniqueidentifier_desc'] = 'Jede Buchung benötigt eine eindeutige id. Diese startet üblicherweise bei 1, kann aber auch höher gesetzt werden. Wenn sie z.b. auf 10000000 gesetzt wird, hat der erste Kauf die ID 10000001. Wenn das Feld gesetzt wird, wird ein Error geworfen, sobald die Anzahl der Stellen überschritten wird. Wird der Wert auf 1 gesetzt, sind nur neun Buchungen möglich.';
 $string['bookingfeeonlyonce'] = 'Buchungsgebühr nur einmal einheben';
@@ -106,6 +107,21 @@ $string['privacyheading'] = "Privatsphäreneinstellungen";
 $string['privacyheadingdescription'] = "Einstellungen in Verbindung mit den Moodle Privatsphäreneinstellugnen";
 $string['deleteledger'] = "Lösche das Zahlungsjournal wenn ein/e NutzerIn das Löschen ihrer Daten verlangt";
 $string['deleteledgerdescription'] = "Das Zahlungsjournal enthält Zahlungsinformationen, die aus rechtlichen Gründen womöglich erhalten bleiben müssen.";
+
+$string['rebookingheading'] = "Umbuchungen";
+$string['rebookingheadingdescription'] = "Käufe können unter gewissen Umständen umgebucht werden. Das bedeutet, dass z.B. ein gekaufter Kurs storniert wird. Anstatt eines Guthabens wird sofort auf einen anderen Kurs umgebucht. Dabei fällt keine neuerliche Buchungsgebühr an. Eventuelle Überzahlungen verfallen.";
+$string['rebookingperiod'] = "Umbuchungsperiode";
+$string['rebookingperioddesc'] = "Die Zeit, in der die maximale Anzahl von Umbuchungen beschränkt werden kann. Typischerweise die Dauer eines Semesters.";
+$string['rebookingmaxnumber'] = "Maximale Anzahl an Umbuchungen";
+$string['rebookingmaxnumberdesc'] = "Es werden zum Beispiel nur 3 Umbuchungen innerhalb von 100 Tagen erlaubt";
+$string['allowrebooking'] = 'Umbuchen erlauben';
+$string['allowrebooking_desc'] = 'Dies ermöglicht es den Nutzer:innen, bereits gekaufte Items umzubuchen.
+Die gekauften Items können mit negativem Preis in den Warenkorb gelegt werden und werden bei Umbuchung storniert,
+gleichzeitig wird ein neues Item gebucht. Eine Umbuchung mit negativem Gesamtpreis ist nicht möglich.';
+$string['allowrebookingcredit'] = 'Umbuchungsgutschrift';
+$string['allowrebookingcredit_desc'] = 'Wenn Sie die Umbuchungsgutschrift aktivieren, bekommt ein:e Nutzer:in eine Gutschrift in Höhe der Buchungs- und Stornogebühr gutgeschrieben,
+wenn er:sie innerhalb der Stornofrist ein Item storniert und ein anderes bucht.';
+$string['rebookingalert'] = "Um umzubuchen fügen Sie bitte noch einen weiteren Kurs in Ihrem Einkaufswagen hinzu";
 
 // Capabilities.
 $string['shopping_cart:canbuy'] = 'Kann kaufen';
@@ -222,12 +238,14 @@ $string['manualrebookingisallowed_desc'] = 'Mit dieser Einstellung kann die Kass
  Aktivieren Sie dieses Feature nur, wenn Sie sicher sind, dass Sie es wirklich benötigen. Falsche Handhabung kann
  zu fehlerhaften Einträgen in der Datenbank führen!</span>)';
 
-$string['cancelpurchase'] = 'Stornieren';
+$string['cancelpurchase'] = 'Kauf stornieren';
 $string['canceled'] = 'Storniert';
 $string['canceldidntwork'] = 'Fehler beim Stornieren';
 $string['cancelsuccess'] = 'Erfolgreich storniert';
 $string['applytocomponent'] = 'Stornierung an Artikel Plugin melden';
 $string['applytocomponent_desc'] = 'Wird ein Artikel irrtümlich doppelt bezahlt, kann das Häkchen entfernt werden um hier zu stornieren, ohne dass die Käuferin aus z.B. dem Kurs ausgeschrieben wird.';
+$string['markforrebooking'] = 'Kurs umbuchen';
+$string['markedforrebooking'] = 'Fürs Umbuchen markiert';
 
 $string['youcancanceluntil'] = 'Sie können bis {$a} stornieren.';
 $string['youcannotcancelanymore'] = 'Stornieren ist nicht möglich.';
@@ -282,8 +300,9 @@ $string['confirmpaidbacktitle'] = 'Bestätige Auszahlung';
 $string['confirmpaidbackbody'] = 'Wollen Sie die Auszahlung bestätigen? Das setzt das Guthaben auf 0.';
 $string['confirmpaidback'] = 'Bestätige Auszahlung';
 
-$string['confirmzeropricecheckouttitle'] = 'Mit Guthaben bezahlen';
-$string['confirmzeropricecheckoutbody'] = 'Sie haben genug Guthaben, um Ihren Kauf zur Gänze zu bezahlen. Wollen Sie fortfahren?';
+$string['confirmzeropricecheckouttitle'] = 'Jetzt buchen';
+$string['confirmzeropricecheckoutbody'] = 'Für diese Buchung ist keine Zahlung notwendig.
+Wollen Sie fortfahren und direkt buchen?';
 $string['confirmzeropricecheckout'] = 'Bestätige';
 
 $string['deletecreditcash'] = 'Ausbezahlt bar';
@@ -332,6 +351,14 @@ $string['titledailysums:all'] = 'Gesamteinnahmen';
 $string['titledailysums:total'] = 'Saldo';
 $string['titledailysums:current'] = 'Aktuelle:r Kassier:in';
 $string['dailysums:downloadpdf'] = 'Tageseinnahmen als PDF herunterladen';
+$string['dailysumspdfhtml'] = 'HTML-Vorlage für die Erstellung des Tagessumen-PDFs';
+$string['dailysumspdfhtml:description'] = 'Geben Sie HTML-Code ein, der als Vorlage für die Erstellung des Tagessumen-PDFs verwendet werden soll.
+Sie können die folgenden Platzhalter verwenden: [[title]], [[date]], [[totalsum]], [[printdate]], [[currency]], [[online]], [[cash]], [[creditcard]], [[debitcard]],
+[[manual]], [[creditspaidbackcash]], [[creditspaidbacktransfer]].<br>
+Lassen Sie das Feld leer, um die Standard-Vorlage zu verwenden.';
+$string['downloadcashreportlimit'] = 'Download-Limit festlegen';
+$string['downloadcashreportlimitdesc'] = 'Geben Sie die maximale Anzahl an Zeilen ein, die beim Download des Kassajournals heruntergeladen werden sollen.
+Dies kann Download-Problem bei zu großen Datenmengen beheben.';
 
 // Report headers.
 $string['timecreated'] = 'Erstellt';
@@ -350,6 +377,9 @@ $string['paymentstatus'] = 'Status';
 $string['gateway'] = 'Gateway';
 $string['orderid'] = 'OrderID';
 $string['usermodified'] = 'Bearbeitet von';
+$string['testing:title'] = 'Warenkorb-Demo';
+$string['testing:description'] = 'Hier können Sie Test-Items zum Warenkorb hinzufügen, um das Warenkorb-Plugin zu testen.';
+$string['testing:item'] = 'Test-Item';
 
 // Payment methods.
 $string['paymentmethod'] = 'Bezahlmethode';
@@ -440,7 +470,8 @@ $string['payment_added'] = 'Nutzer/in hat eine Zahlung gestartet';
 $string['payment_added_log'] = 'Nutzer/in mit der id {$a->userid} hat für den Aritkel {$a->itemid} {$a->component} für die Nutzer/in mit der id {$a->relateduserid} einen Zahlungsprozess mit dem identifier {$a->identifier} gestartet';
 
 // Caches.
-$string['cachedef_schistory'] = 'Cache wird verwendet um die Einkaufskörbe der user zu speichern';
+$string['cachedef_schistory'] = 'Warenkorb-Cache (Shopping Cart History Cache)';
+$string['cachedef_cacherebooking'] = 'Umbuchungs-Cache (Rebooking Cache)';
 
 // Cashier manual rebook.
 $string['annotation'] = 'Anmerkung';
@@ -472,3 +503,39 @@ $string['erpnext'] = 'ERPNext';
 $string['history'] = "Käufe";
 $string['ledger'] = "Zahlungsjournal";
 $string['credits'] = "Guthaben";
+
+// Handler.
+$string['allowinstallment'] = 'Erlaube Ratenzahlungen';
+$string['allowinstallment_help'] = 'Bei Ratenzahlungen muss zuerst nur ein Teil des Gesamtbetrags überwiesen werden.';
+$string['useinstallments'] = "Ratenzahlungen aktivieren";
+$string['ledgerinstallment'] = 'Folgende Ratenzahlung wurde geleistet: Zahlung Nummer {$a->id}, Fälligkeit {$a->date}';
+
+$string['numberofpayments'] = 'Anzahl der Zahlungen';
+$string['numberofpayments_help'] = 'Anzahl notwendiger Zahlungen NACH der ersten Zahlung. Bitte beachten Sie, dass Ratenzahlungen nicht möglich sind, wenn nicht genügend Zeit bis zum Kursbeginn verbleibt, unter Berücksichtigung der Anzahl der Zahlungen und der Zeit zwischen den Zahlungen (Admin-Plugin-Einstellung).';
+$string['duedate'] = 'Letztes Zahlungsdatum';
+$string['duedate_help'] = 'An diesem Datum muss der volle Betrag überwiesen werden.
+Liegt das Datum 100 Tage in der Zukunft und es sind zwei Teilzalungen eingestellt,
+muss - nach der ersten Zahlung - die Hälfte des offenen Betrags nach 50 Tagen
+und der Rest nach 100 Tagen bezahlt werden.';
+$string['on'] = "am";
+$string['furtherpayments'] = 'Weitere Zahlungen';
+$string['insteadof'] = "anstatt";
+$string['for'] = "für";
+$string['downpayment'] = "Anzahlung";
+$string['downpayment_help'] = 'Dieser Betrag muss am Anfang überweisen werden. Die Restsumme erst später.';
+$string['installments'] = "Ratenzahlungen";
+$string['installment'] = "Ratenzahlung";
+$string['duedatevariable'] = 'Fällig N Tage nach erster Anzahlung';
+$string['duedatevariable_help'] = 'Anzahl Tage NACH der ersten Anzahlung nach denen der volle Betrag überwiesen worden sein muss.';
+$string['incorrectnumberofpayments'] = 'Preis muss ohne Restbetrag durch die Anzahl der Zahlungen teilbar sein.';
+$string['installmentsettings'] = 'Einstellungen Ratenzahlungen';
+$string['enableinstallments'] = 'Ermögliche Ratenzahlungen';
+$string['enableinstallments'] = 'Für jeden verkauften Artikel kann eingestellt werden, ob Ratenzahlungen möglich sind und zu welchen Konditionen.';
+$string['timebetweenpayments'] = 'Zeit zwischen Zahlungen';
+$string['timebetweenpayments_desc'] = 'Die Zeit zwischen Zahlungen, üblicherweise 30 Tage.';
+$string['onlyone'] = 'Nur einer dieser Werte kann mehr als 0 sein.';
+$string['reminderdaysbefore'] = "Erinnerung x Tage vorher";
+$string['reminderdaysbefore_desc'] = "Die eingestellte Anzahl Tage vor fälliger Zahlung erscheint eine Nachricht für die/den Benutzer:in auf Ihrer Seite";
+$string['installmentpaymentisdue'] = 'Nicht vergessen: {$a->itemname}, {$a->price} {$a->currency}. <a href="/local/shopping_cart/installments.php">Bitte hier zahlen</a>';
+$string['installmentpaymentwasdue'] = 'Nicht vergessen: {$a->itemname}, {$a->price} {$a->currency}. <a href="/local/shopping_cart/installments.php">Bitte hier zahlen</a>';
+$string['noinstallments'] = "Aktuell keine Ratenzahlungen";

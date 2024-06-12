@@ -36,7 +36,7 @@
         "componentname": "mod_booking",
         "area": "main",
         "price": 133,
-        "expirationdate": 1642155164,
+        "expirationtime": 1642155164,
         "itemname": "Tenniscourse",
         "currency": "EUR",
         "iscashier": false,
@@ -45,8 +45,8 @@
 
 }}
 
-<li id="item-{{componentname}}-{{area}}-{{itemid}}"
-    class="clearfix"
+<div id="item-{{componentname}}-{{area}}-{{itemid}}"
+    class="shopping-cart-item clearfix"
     data-price='{{price}}'
     data-name='{{itemname}}'
     data-component='{{componentname}}'
@@ -66,6 +66,11 @@
     </span>
     <span class="itemname">
         {{itemname}}
+    </span>
+    <span>
+        {{#installment}}
+             ({{#str}} allowinstallment, local_shopping_cart {{/str}})
+        {{/installment}}
     </span>
     {{#iscashier}}
         <span class="item-button pull-right">
@@ -91,4 +96,4 @@
         {{> local_shopping_cart/item_price }}
     </div>
     <div class="item-description">{{{description}}}</div>
-</li>
+</div>

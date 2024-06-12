@@ -32,6 +32,7 @@ use external_function_parameters;
 use external_multiple_structure;
 use external_value;
 use external_single_structure;
+use local_shopping_cart\local\cartstore;
 use local_shopping_cart\shopping_cart;
 use local_shopping_cart\shopping_cart_history;
 
@@ -89,7 +90,10 @@ class get_shopping_cart_items extends external_api {
             $userid = (int) $params['userid'];
         }
 
-        return shopping_cart::local_shopping_cart_get_cache_data($userid, true);
+        $cartstore = cartstore::instance($userid);
+        $data = $cartstore->get_data();
+
+        return $data;
     }
 
     /**
@@ -116,7 +120,7 @@ class get_shopping_cart_items extends external_api {
                         'deductible' => new external_value(PARAM_FLOAT, 'Deductible amount', VALUE_REQUIRED),
                         'usecredit' => new external_value(PARAM_INT, 'If we want to use the credit or not'),
                         'discount' => new external_value(PARAM_FLOAT, 'The sum of all discounts on the items.', VALUE_DEFAULT, 0),
-                        'expirationdate' => new external_value(PARAM_INT, 'Expiration timestamp of cart', VALUE_REQUIRED),
+                        'expirationtime' => new external_value(PARAM_INT, 'Expiration timestamp of cart', VALUE_REQUIRED),
                         'nowdate' => new external_value(PARAM_INT, 'current Timestamp', VALUE_REQUIRED),
                         'maxitems' => new external_value(PARAM_INT, 'Max Items', VALUE_REQUIRED),
                         'items' => new external_multiple_structure (
@@ -157,11 +161,12 @@ class get_shopping_cart_items extends external_api {
                                                     PARAM_TEXT,
                                                     'Cost center for item',
                                                     VALUE_OPTIONAL),
-                                                'area' => new external_value(PARAM_ALPHANUM, 'Area', VALUE_OPTIONAL),
+                                                'area' => new external_value(PARAM_TEXT, 'Area', VALUE_OPTIONAL),
                                                 'description' => new external_value(PARAM_RAW, 'Item description', VALUE_OPTIONAL),
                                                 'imageurl' => new external_value(PARAM_RAW, 'Image url', VALUE_OPTIONAL),
                                                 'canceluntil' => new external_value(PARAM_INT,
                                                         'Timestamp until when cancel is possible', VALUE_OPTIONAL),
+                                                'nodelete' => new external_value(PARAM_INT, 'Marker for no delete', VALUE_OPTIONAL),
                                         ]
                                 )
                         ),

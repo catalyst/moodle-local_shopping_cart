@@ -21,6 +21,7 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use local_shopping_cart\local\cartstore;
 use local_shopping_cart\shopping_cart;
 
 // Define constants.
@@ -57,6 +58,14 @@ define('LOCAL_SHOPPING_CART_CARTPARAM_CARTISFULL', 2); // Item could not be adde
 define('LOCAL_SHOPPING_CART_CARTPARAM_COSTCENTER', 3); // Item could not be added because of different cost center.
 define('LOCAL_SHOPPING_CART_CARTPARAM_FULLYBOOKED', 4); // Item could not be added because it's already fully booked.
 define('LOCAL_SHOPPING_CART_CARTPARAM_ALREADYBOOKED', 5); // Item could not be added because it was already booked before.
+
+// Price modifiers.
+define('LOCAL_SHOPPING_CART_PRICEMOD_INSTALLMENTS', 10); // Apply Installments.
+define('LOCAL_SHOPPING_CART_PRICEMOD_STANDARD', 30); // Apply Standard calculation.
+define('LOCAL_SHOPPING_CART_PRICEMOD_TAXES', 50); // Apply Taxes on cart.
+define('LOCAL_SHOPPING_CART_PRICEMOD_CREDITS', 100); // Apply Credits on cart.
+define('LOCAL_SHOPPING_CART_PRICEMOD_TERMSANDCONDITIONS', 150); // Applies Terms and conditions, normally for checkout.
+define('LOCAL_SHOPPING_CART_PRICEMOD_CHECKOUT', 200); // Checkout is a price modifier, but only applied manually.
 
 /**
  * Adds module specific settings to the settings block
@@ -96,18 +105,36 @@ function local_shopping_cart_render_navbar_output(\renderer_base $renderer) {
     }
 
     $output = '';
-    $cache = shopping_cart::local_shopping_cart_get_cache_data($USER->id);
+
+    $cartstore = cartstore::instance($USER->id);
+    $data = $cartstore->get_data();
+
+    $dueinstallments = $cartstore->get_due_installments();
+
+    if (!empty($dueinstallments)) {
+        foreach ($dueinstallments as $dueinstallement) {
+
+            if ($dueinstallement['installment'] > time()) {
+                $message = get_string('installmentpaymentisdue', 'local_shopping_cart', $dueinstallement);
+                $type = \core\notification::INFO;
+            } else {
+                $message = get_string('installmentpaymentwasdue', 'local_shopping_cart', $dueinstallement);
+                $type = \core\notification::ERROR;
+            }
+            \core\notification::add($message, $type);
+        }
+    }
 
     // If we have the capability, we show a link to cashier's desk.
     if (has_capability('local/shopping_cart:cashier', context_system::instance())) {
-        $cache['showcashier'] = true;
-        $cache['cashierurl'] = new moodle_url('/local/shopping_cart/cashier.php');
+        $data['showcashier'] = true;
+        $data['cashierurl'] = new moodle_url('/local/shopping_cart/cashier.php');
     }
 
     // Convert numbers to strings with 2 fixed decimals right before rendering.
-    shopping_cart::convert_prices_to_number_format($cache);
+    shopping_cart::convert_prices_to_number_format($data);
 
-    $output .= $renderer->render_from_template('local_shopping_cart/shopping_cart_popover', $cache);
+    $output .= $renderer->render_from_template('local_shopping_cart/shopping_cart_popover', $data);
     return $output;
 }
 

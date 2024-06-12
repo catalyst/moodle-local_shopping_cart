@@ -31,8 +31,11 @@ use external_api;
 use external_function_parameters;
 use external_value;
 use external_single_structure;
+use local_shopping_cart\local\cartstore;
 use local_shopping_cart\shopping_cart;
 use local_shopping_cart\shopping_cart_bookingfee;
+use local_shopping_cart\shopping_cart_history;
+use local_shopping_cart\shopping_cart_rebookingcredit;
 use moodle_exception;
 
 defined('MOODLE_INTERNAL') || die();
@@ -57,7 +60,7 @@ class delete_item_from_cart extends external_api {
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'component'  => new external_value(PARAM_COMPONENT, 'component name like mod_booking', VALUE_DEFAULT, ''),
-            'area'  => new external_value(PARAM_ALPHANUM, 'area like main', VALUE_DEFAULT, ''),
+            'area'  => new external_value(PARAM_TEXT, 'area like main', VALUE_DEFAULT, ''),
             'itemid'  => new external_value(PARAM_INT, 'itemid', VALUE_DEFAULT, '0'),
             'userid'  => new external_value(PARAM_INT, 'userid', VALUE_DEFAULT, '0'),
             ]
@@ -115,6 +118,16 @@ class delete_item_from_cart extends external_api {
         if (shopping_cart::is_rebookingcredit($params['component'], $params['area'])
             && !has_capability('local/shopping_cart:cashier', $context)) {
             return false;
+        }
+
+        if ($params['component'] == 'local_shopping_cart' && $params['area'] == 'rebookitem') {
+            shopping_cart_history::toggle_mark_for_rebooking($params['itemid'], $userid, true);
+
+            $cartstore = cartstore::instance($userid);
+            if ($cartstore->has_items()) {
+                shopping_cart_bookingfee::add_fee_to_cart($userid);
+            }
+            return ['success' => 1];
         }
 
         // This treats the cache side.

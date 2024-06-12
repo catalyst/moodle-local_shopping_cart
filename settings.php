@@ -328,6 +328,34 @@ if ($hassiteconfig) {
         new admin_setting_configcheckbox($componentname . '/showdailysumscurrentcashier',
                 get_string('showdailysumscurrentcashier', 'local_shopping_cart'),
                 '', 1));
+
+    $cashreportsettings->add(
+        new admin_setting_configtextarea(
+                $componentname . '/dailysumspdfhtml',
+                get_string('dailysumspdfhtml', $componentname),
+                get_string('dailysumspdfhtml:description', $componentname),
+                '', PARAM_RAW
+        )
+    );
+
+    $limitopts = [
+        '0' => get_string('nolimit', 'local_shopping_cart'),
+        '10' => '10',
+        '50' => '50',
+        '100' => '100',
+        '500' => '500',
+        '1000' => '1000',
+        '5000' => '5000',
+        '10000' => '10000',
+        '50000' => '50000',
+        '100000' => '100000',
+    ];
+    $cashreportsettings->add(new admin_setting_configselect('local_shopping_cart/downloadcashreportlimit',
+            get_string('downloadcashreportlimit', 'local_shopping_cart'),
+            get_string('downloadcashreportlimitdesc', 'local_shopping_cart'),
+            '10000', // Default value.
+            $limitopts
+    ));
     $ADMIN->add($componentname, $cashreportsettings);
 
     // Setting to enable taxes processing.
@@ -385,6 +413,42 @@ if ($hassiteconfig) {
         );
     }
     $ADMIN->add($componentname, $taxsettings);
+
+    // Setting to enable taxes processing.
+    $installmentsettings = new admin_settingpage(
+        'local_shopping_cart_installment_settings',
+        get_string('installmentsettings', 'local_shopping_cart')
+        );
+    $installmentsettings->add(
+            new admin_setting_configcheckbox($componentname . '/enableinstallments',
+                    get_string('enableinstallments', 'local_shopping_cart'),
+                    get_string('enableinstallments_desc', 'local_shopping_cart'), 0));
+
+    $installmentsenabled = get_config('local_shopping_cart', 'enableinstallments') == 1;
+    if ($installmentsenabled) {
+
+        $installmentsettings->add(
+                new admin_setting_configtext(
+                        $componentname . '/timebetweenpayments',
+                        get_string('timebetweenpayments', $componentname),
+                        get_string('timebetweenpayments_desc', $componentname),
+                        30,
+                        PARAM_INT
+                )
+            );
+
+        $installmentsettings->add(
+        new admin_setting_configtext(
+                $componentname . '/reminderdaysbefore',
+                get_string('reminderdaysbefore', $componentname),
+                get_string('reminderdaysbefore_desc', $componentname),
+                3,
+                PARAM_INT
+        )
+        );
+    }
+    $ADMIN->add($componentname, $installmentsettings);
+
     defined('MOODLE_INTERNAL') || die;
 
     // Add a heading for the section.
@@ -436,6 +500,44 @@ if ($hassiteconfig) {
             'Austria', // Default value (empty for none selected).
             $newcountries
     ));
+
+    // Add a heading for the section.
+    $settings->add(new admin_setting_heading($componentname . '/rebookingheading',
+            get_string('rebookingheading', 'local_shopping_cart'),
+            get_string('rebookingheadingdescription', 'local_shopping_cart')
+    ));
+
+    // Setting to round percentage discounts to full integers.
+    $settings->add(
+        new admin_setting_configcheckbox($componentname . '/allowrebooking',
+                get_string('allowrebooking', 'local_shopping_cart'),
+                get_string('allowrebooking_desc', 'local_shopping_cart'), 0));
+
+    // Add a text field for the Token.
+    $settings->add(new admin_setting_configtext($componentname . '/rebookingperiod',
+            get_string('rebookingperiod', 'local_shopping_cart'),
+            get_string('rebookingperioddesc', 'local_shopping_cart'),
+            '',
+            PARAM_INT
+    ));
+
+    // Add a text field for the Token.
+    $settings->add(new admin_setting_configtext('local_shopping_cart/rebookingmaxnumber',
+            get_string('rebookingmaxnumber', 'local_shopping_cart'),
+            get_string('rebookingmaxnumberdesc', 'local_shopping_cart'),
+            '',
+            PARAM_INT
+    ));
+
+    $settings->add(
+        new admin_setting_configtext(
+                $componentname . '/rebookingfee',
+                get_string('rebookingfee', $componentname),
+                get_string('rebookingfee_desc', $componentname),
+                0,
+                PARAM_FLOAT
+        )
+        );
 
     // Add a heading for the section.
     $settings->add(new admin_setting_heading('local_shopping_cart/privacyheading',

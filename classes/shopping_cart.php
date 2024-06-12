@@ -30,7 +30,9 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/../lib.php');
 
 use cache_helper;
+use coding_exception;
 use context_system;
+use dml_exception;
 use lang_string;
 use local_shopping_cart\event\checkout_completed;
 use local_shopping_cart\event\item_added;
@@ -43,6 +45,7 @@ use moodle_exception;
 use Exception;
 use local_shopping_cart\event\item_notbought;
 use local_shopping_cart\interfaces\interface_transaction_complete;
+use local_shopping_cart\local\cartstore;
 use local_shopping_cart\payment\service_provider;
 use moodle_url;
 use stdClass;
@@ -77,50 +80,30 @@ class shopping_cart {
      *
      * @return array
      */
-    public static function allow_add_item_to_cart(string $component, string $area, int $itemid, int $userid): array {
+    public static function allow_add_item_to_cart(
+        string $component,
+        string $area,
+        int $itemid,
+        int $userid): array {
 
-        global $USER;
-
-        // If there is no user specified, we determine it automatically.
-        if ($userid < 0 || $userid == self::return_buy_for_userid()) {
-            $context = context_system::instance();
-            if (has_capability('local/shopping_cart:cashier', $context)) {
-                $userid = self::return_buy_for_userid();
-            }
-        } else {
-            // As we are not on cashier anymore, we delete buy for user.
-            self::buy_for_user(0);
-        }
-        if ($userid < 1) {
-            $userid = $USER->id;
-        }
+        $userid = self::set_user($userid);
 
         // Check the cache for items in cart.
         $maxitems = get_config('local_shopping_cart', 'maxitems');
-        $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-        $cachekey = $userid . '_shopping_cart';
 
-        $cachedrawdata = $cache->get($cachekey);
-        $cacheitemkey = $component . '-' . $area . '-' . $itemid;
+        $cartstore = cartstore::instance($userid);
+        $numberofitems = count($cartstore->get_items());
 
         // Check if maxitems is exceeded.
-        if (isset($maxitems) && isset($cachedrawdata['items']) && (count($cachedrawdata['items']) >= $maxitems)) {
+        if (isset($maxitems) && ($numberofitems >= $maxitems)) {
             return [
                 'success' => LOCAL_SHOPPING_CART_CARTPARAM_CARTISFULL,
                 'itemname' => '',
             ];
         }
 
-        // If we have nothing in our cart and we are not about...
-        // ... to add the booking fee...
-        // ... we add the booking fee.
-        if (empty($cachedrawdata['items'])
-            && $area != 'bookingfee') {
-            $cachedrawdata = $cache->get($cachekey);
-        }
-
         // Todo: Admin setting could allow for more than one item. Right now, only one.
-        if (isset($cachedrawdata['items'][$cacheitemkey])) {
+        if ($cartstore->already_in_cart($component, $area, $itemid)) {
             return [
                 'success' => LOCAL_SHOPPING_CART_CARTPARAM_ALREADYINCART,
                 'itemname' => '',
@@ -135,23 +118,12 @@ class shopping_cart {
 
             if (get_config('local_shopping_cart', 'samecostcenter')) {
                 $currentcostcenter = $cartitem['costcenter'] ?? '';
-                $costcenterincart = '';
-                if (!empty($cachedrawdata['items'])) {
-                    foreach ($cachedrawdata['items'] as $itemincart) {
-                        if ($itemincart['area'] = 'bookingfee' || $itemincart['area'] = 'rebookingcredit') {
-                            // We only need to check for "real" items, booking fee does not apply.
-                            continue;
-                        } else {
-                            $costcenterincart = $itemincart['costcenter'] ?? '';
-                            if ($currentcostcenter != $costcenterincart) {
-                                return [
-                                    'success' => LOCAL_SHOPPING_CART_CARTPARAM_COSTCENTER,
-                                    'itemname' => $cartitem['itemname'] ?? '',
-                                ];
-                            }
-                            break;
-                        }
-                    }
+
+                if (!$cartstore->same_costcenter($currentcostcenter)) {
+                    return [
+                        'success' => LOCAL_SHOPPING_CART_CARTPARAM_COSTCENTER,
+                        'itemname' => $cartitem['itemname'] ?? '',
+                    ];
                 }
             }
             if (empty($cartitem)) {
@@ -217,45 +189,31 @@ class shopping_cart {
 
         $buyforuser = false;
 
-        // If there is no user specified, we determine it automatically.
-        if ($userid < 0 || $userid == self::return_buy_for_userid()) {
-            $context = context_system::instance();
-            if (has_capability('local/shopping_cart:cashier', $context)) {
-                $userid = self::return_buy_for_userid();
-                $buyforuser = true;
-            }
-        } else {
-            // As we are not on cashier anymore, we delete buy for user.
-            self::buy_for_user(0);
-        }
-        if ($userid < 1) {
-            $userid = $USER->id;
-        }
-
-        // Check the cache for items in cart.
-        $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-        $cachekey = $userid . '_shopping_cart';
-        $cachedrawdata = $cache->get($cachekey);
-        $cacheitemkey = $component . '-' . $area . '-' . $itemid;
+        $userid = self::set_user($userid);
 
         $response = self::allow_add_item_to_cart($component, $area, $itemid, $userid);
         $cartparam = $response['success'];
+
+        $cartstore = cartstore::instance($userid);
 
         if ($cartparam == LOCAL_SHOPPING_CART_CARTPARAM_SUCCESS) {
             // If we have nothing in our cart and we are not about...
             // ... to add the booking fee...
             // ... we add the booking fee.
-            if (empty($cachedrawdata['items'])
-                && $area != 'bookingfee'
-                && $area != 'rebookingcredit') {
+            list($areatocheck) = explode('-', $area);
+            if ((!$cartstore->has_items()
+                || $cartstore->get_total_price_of_items() === 0)
+                && !in_array($areatocheck, [
+                    'bookingfee',
+                    'rebookingfee',
+                    'rebookingcredit',
+                    'rebookitem',
+                    'installments'])) {
                 // If we buy for user, we need to use -1 as userid.
                 // Also we add $userid as second param so we can check if fee was already paid.
                 shopping_cart_bookingfee::add_fee_to_cart($buyforuser ? -1 : $userid, $buyforuser ? $userid : 0);
-                $cachedrawdata = $cache->get($cachekey);
             }
         }
-
-        $expirationtimestamp = self::get_expirationdate();
 
         switch ($cartparam) {
             case LOCAL_SHOPPING_CART_CARTPARAM_SUCCESS:
@@ -264,23 +222,30 @@ class shopping_cart {
                 $cartitemarray = self::load_cartitem($component, $area, $itemid, $userid);
                 if (isset($cartitemarray['cartitem'])) {
                     // Get the itemdata as array.
-                    $itemdata = $cartitemarray['cartitem']->as_array();
-                    $itemdata['price'] = $itemdata['price'];
+                    $cartitem = $cartitemarray['cartitem'];
 
-                    // Then we set item in Cache.
-                    $cachedrawdata['items'][$cacheitemkey] = $itemdata;
-                    $cachedrawdata['expirationdate'] = $expirationtimestamp;
-                    $cache->set($cachekey, $cachedrawdata);
+                    // At this point, we might have added the booking fee to the cart.
+                    // This is because we always add the fee first.
+                    // But if the price of the item we buy is 0, we don't want to demand a booking fee neither.
+                    // Therefore, we need to delete it again from the cart.
+                    if (($cartitem->price() == 0)
+                        && count($cartstore->get_items()) < 2) {
+                        $cartstore->delete_bookingfee();
+                    }
+
+                    // When we add the cartitem to the cache, we receive an array.
+                    $itemdata = $cartstore->add_item($cartitem);
 
                     // If it applies, we add the rebookingcredit.
-                    shopping_cart_rebookingcredit::add_rebookingcredit($cachedrawdata, $area, $buyforuser ? -1 : $userid);
+                    shopping_cart_rebookingcredit::add_rebookingcredit($area, $buyforuser ? -1 : $userid);
 
-                    $itemdata['expirationdate'] = $expirationtimestamp;
                     $itemdata['success'] = LOCAL_SHOPPING_CART_CARTPARAM_SUCCESS;
                     $itemdata['buyforuser'] = $USER->id == $userid ? 0 : $userid;
 
                     // Add or reschedule all delete_item_tasks for all the items in the cart.
-                    self::add_or_reschedule_addhoc_tasks($expirationtimestamp, $userid);
+                    self::add_or_reschedule_addhoc_tasks(
+                        $itemdata['expirationtime'],
+                        $userid);
 
                     $context = context_system::instance();
                     // Trigger item deleted event.
@@ -296,58 +261,79 @@ class shopping_cart {
 
                     $event->trigger();
                 } else {
-                    $itemdata = [];
-                    $itemdata['success'] = LOCAL_SHOPPING_CART_CARTPARAM_ERROR;
-                    $itemdata['expirationdate'] = 0;
-                    $itemdata['price'] = 0;
-                    $itemdata['buyforuser'] = $USER->id == $userid ? 0 : $userid;
+                    $itemdata = self::get_dummy_item(LOCAL_SHOPPING_CART_CARTPARAM_ERROR, $userid);
                 }
                 break;
             case LOCAL_SHOPPING_CART_CARTPARAM_COSTCENTER:
-                $itemdata = [];
-                $itemdata['success'] = LOCAL_SHOPPING_CART_CARTPARAM_COSTCENTER;
-                    // Important. In JS we show the modal based on success 2.
-                $itemdata['expirationdate'] = 0;
-                $itemdata['buyforuser'] = $USER->id == $userid ? 0 : $userid;
-                $itemdata['price'] = 0;
+                $itemdata = self::get_dummy_item(LOCAL_SHOPPING_CART_CARTPARAM_COSTCENTER, $userid);
                 break;
             case LOCAL_SHOPPING_CART_CARTPARAM_ALREADYINCART:
                 // This case means that we have the item already in the cart.
                 // Normally, this should not happen, because of JS, but it might occure when a user is...
                 // Logged in on two different devices.
-                $itemdata = [];
-                $itemdata['success'] = LOCAL_SHOPPING_CART_CARTPARAM_ALREADYINCART;
-                $itemdata['buyforuser'] = $USER->id == $userid ? 0 : $userid;
-                $itemdata['expirationdate'] = $expirationtimestamp;
-                $itemdata['price'] = 0;
+                $itemdata = self::get_dummy_item(LOCAL_SHOPPING_CART_CARTPARAM_ALREADYINCART, $userid);
                 break;
             case LOCAL_SHOPPING_CART_CARTPARAM_CARTISFULL:
-                $itemdata['success'] = LOCAL_SHOPPING_CART_CARTPARAM_CARTISFULL;
-                $itemdata['buyforuser'] = $USER->id == $userid ? 0 : $userid;
-                $itemdata['expirationdate'] = $expirationtimestamp;
-                $itemdata['price'] = 0;
+                $itemdata = self::get_dummy_item(LOCAL_SHOPPING_CART_CARTPARAM_CARTISFULL, $userid);
                 break;
             case LOCAL_SHOPPING_CART_CARTPARAM_FULLYBOOKED:
-                $itemdata['success'] = LOCAL_SHOPPING_CART_CARTPARAM_FULLYBOOKED;
-                $itemdata['buyforuser'] = $USER->id == $userid ? 0 : $userid;
-                $itemdata['expirationdate'] = $expirationtimestamp;
-                $itemdata['price'] = 0;
+                $itemdata = self::get_dummy_item(LOCAL_SHOPPING_CART_CARTPARAM_FULLYBOOKED, $userid);
                 break;
             case LOCAL_SHOPPING_CART_CARTPARAM_ALREADYBOOKED:
-                $itemdata['success'] = LOCAL_SHOPPING_CART_CARTPARAM_ALREADYBOOKED;
-                $itemdata['buyforuser'] = $USER->id == $userid ? 0 : $userid;
-                $itemdata['expirationdate'] = $expirationtimestamp;
-                $itemdata['price'] = 0;
+                $itemdata = self::get_dummy_item(LOCAL_SHOPPING_CART_CARTPARAM_ALREADYBOOKED, $userid);
                 break;
             case LOCAL_SHOPPING_CART_CARTPARAM_ERROR:
             default:
-                $itemdata['success'] = LOCAL_SHOPPING_CART_CARTPARAM_ERROR;
-                $itemdata['buyforuser'] = $USER->id == $userid ? 0 : $userid;
-                $itemdata['expirationdate'] = $expirationtimestamp;
-                $itemdata['price'] = 0;
+                $itemdata = self::get_dummy_item(LOCAL_SHOPPING_CART_CARTPARAM_ERROR, $userid);
                 break;
         }
         return $itemdata;
+    }
+
+    /**
+     * Returns a dummy array with the correct success param.
+     * @param int $success
+     * @param int $userid
+     * @return int[]
+     * @throws dml_exception
+     */
+    private static function get_dummy_item(int $success, int $userid) {
+
+        global $USER;
+
+        $itemdata = [];
+        $itemdata['success'] = $success;
+        $itemdata['buyforuser'] = $USER->id == $userid ? 0 : $userid;
+        $itemdata['expirationtime'] = self::get_expirationtime();
+        $itemdata['price'] = 0;
+        return $itemdata;
+    }
+
+    /**
+     * Function to set the userid correctly.
+     * @param int $userid
+     * @return mixed
+     * @throws coding_exception
+     * @throws dml_exception
+     */
+    public static function set_user(int $userid) {
+
+        global $USER;
+
+        // If there is no user specified, we determine it automatically.
+        if ($userid < 0 || $userid == self::return_buy_for_userid()) {
+            $context = context_system::instance();
+            if (has_capability('local/shopping_cart:cashier', $context)) {
+                $userid = self::return_buy_for_userid();
+            }
+        } else {
+            // As we are not on cashier anymore, we delete buy for user.
+            self::buy_for_user(0);
+        }
+        if ($userid < 1) {
+            $userid = $USER->id;
+        }
+        return $userid;
     }
 
     /**
@@ -355,7 +341,7 @@ class shopping_cart {
      *
      * @return int
      */
-    public static function get_expirationdate(): int {
+    public static function get_expirationtime(): int {
         return time() + get_config('local_shopping_cart', 'expirationtime') * 60;
     }
 
@@ -381,17 +367,8 @@ class shopping_cart {
 
         $userid = $userid == 0 ? $USER->id : $userid;
 
-        $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-        $cachekey = $userid . '_shopping_cart';
-
-        $cachedrawdata = $cache->get($cachekey);
-        if ($cachedrawdata) {
-            $cacheitemkey = $component . '-' . $area . '-' . $itemid;
-            if (isset($cachedrawdata['items'][$cacheitemkey])) {
-                unset($cachedrawdata['items'][$cacheitemkey]);
-                $cache->set($cachekey, $cachedrawdata);
-            }
-        }
+        $cartstore = cartstore::instance($userid);
+        $cartstore->delete_item($component, $area, $itemid);
 
         if ($unload) {
             // This treats the related component side.
@@ -420,12 +397,13 @@ class shopping_cart {
             $event->trigger();
         }
 
+        $items = $cartstore->get_items();
         // If there are only fees and/or rebookingcredits left, we delete them.
-        if (!empty($cachedrawdata['items'])) {
+        if (!empty($items)) {
 
             // At first, check we can delete.
             $letsdelete = true;
-            foreach ($cachedrawdata['items'] as $remainingitem) {
+            foreach ($items as $remainingitem) {
                 if ($remainingitem['area'] === 'bookingfee' ||
                     $remainingitem['area'] === 'rebookingcredit') {
                     continue;
@@ -434,12 +412,12 @@ class shopping_cart {
                     $letsdelete = false;
 
                     // Also check, if we need to adjust rebookingcredit.
-                    shopping_cart_rebookingcredit::add_rebookingcredit($cachedrawdata, $area, $userid);
+                    shopping_cart_rebookingcredit::add_rebookingcredit($area, $userid);
                 }
             }
 
             if ($letsdelete) {
-                foreach ($cachedrawdata['items'] as $item) {
+                foreach ($items as $item) {
                     if (($item['area'] == 'bookingfee' ||
                         $item['area'] == 'rebookingcredit')
                         && $item['componentname'] == 'local_shopping_cart') {
@@ -461,17 +439,8 @@ class shopping_cart {
      */
     public static function delete_all_items_from_cart(int $userid): bool {
 
-        $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-        $cachekey = $userid . '_shopping_cart';
-
-        $cachedrawdata = $cache->get($cachekey);
-        if ($cachedrawdata) {
-
-            unset($cachedrawdata['items']);
-            unset($cachedrawdata['expirationdate']);
-
-            $cache->set($cachekey, $cachedrawdata);
-        }
+        $cartstore = cartstore::instance($userid);
+        $cartstore->delete_all_items();
         return true;
     }
 
@@ -505,18 +474,6 @@ class shopping_cart {
      */
     public static function load_cartitem(string $component, string $area, int $itemid, int $userid): array {
 
-        // We need to set back shistory cache in case of loading and unloading item.
-        $cache = \cache::make('local_shopping_cart', 'schistory');
-        $result = $cache->get('schistorycache');
-
-        if (!empty($result)) {
-            $result = $result;
-            $identifier = (int) $result['identifier'];
-            $history = new shopping_cart_history();
-            $scdata = $history->prepare_data_from_cache($userid, $identifier ?? 0);
-            $history->store_in_schistory_cache($scdata);
-        }
-
         $providerclass = static::get_service_provider_classname($component);
         return component_class_callback($providerclass, 'load_cartitem', [$area, $itemid, $userid]);
     }
@@ -532,23 +489,14 @@ class shopping_cart {
      */
     public static function unload_cartitem(string $component, string $area, int $itemid, int $userid): array {
 
-        // We need to set back shistory cache in case of loading and unloading item.
-        $cache = \cache::make('local_shopping_cart', 'schistory');
-        $result = $cache->get('schistorycache');
-
-        if (!empty($result)) {
-            $identifier = (int) $result['identifier'];
-            $history = new shopping_cart_history();
-            $scdata = $history->prepare_data_from_cache($userid, $identifier ?? 0);
-            $history->store_in_schistory_cache($scdata);
-        }
-
         $providerclass = static::get_service_provider_classname($component);
         return component_class_callback($providerclass, 'unload_cartitem', [$area, $itemid, $userid]);
     }
 
     /**
      * Confirms Payment and successful checkout for item.
+     * This method also deals with a successful checkout for rebooking item
+     * In this case, we don't book, but we cancel the original item.
      *
      * @param string $component
      * @param string $area
@@ -603,11 +551,11 @@ class shopping_cart {
      * If usecredit is true, the credit of the user is substracted from price...
      * ... and supplementary information about the subtraction is returned.
      *
-     * @param int $userid
+     * @param int|null $userid
      * @param bool $usecredit
      * @return array
      */
-    public static function local_shopping_cart_get_cache_data(int $userid, bool $usecredit = null): array {
+    public static function local_shopping_cart_get_cache_data(int $userid, $usecredit = null): array {
         global $USER, $CFG;
 
         if (empty($userid)) {
@@ -615,94 +563,10 @@ class shopping_cart {
         }
 
         $usecredit = shopping_cart_credits::use_credit_fallback($usecredit, $userid);
-        $taxesenabled = get_config('local_shopping_cart', 'enabletax') == 1;
-        if ($taxesenabled) {
-            $taxcategories = taxcategories::from_raw_string(
-                    get_config('local_shopping_cart', 'defaulttaxcategory'),
-                    get_config('local_shopping_cart', 'taxcategories')
-            );
-        } else {
-            $taxcategories = null;
-        }
 
-        $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-        $cachekey = $userid . '_shopping_cart';
-        $cachedrawdata = $cache->get($cachekey);
+        $cartstore = cartstore::instance($userid);
 
-        // If we have cachedrawdata, we need to check the expiration date.
-        if ($cachedrawdata) {
-            if (isset($cachedrawdata['expirationdate']) && !is_null($cachedrawdata['expirationdate'])
-                    && $cachedrawdata['expirationdate'] < time()) {
-                self::delete_all_items_from_cart($userid);
-                $cachedrawdata = $cache->get($cachekey);
-            }
-        }
-
-        // We create a new item to pass on in any case.
-        $data = [];
-        $data['userid'] = $userid;
-        $data['count'] = 0;
-
-        $data['maxitems'] = get_config('local_shopping_cart', 'maxitems');
-        $data['items'] = [];
-        $data['price'] = 0.00;
-        $data['taxesenabled'] = $taxesenabled;
-        $data['initialtotal'] = 0.00;
-        $data['deductible'] = 0.00;
-        $data['checkboxid'] = bin2hex(random_bytes(3));
-        $data['usecredit'] = $usecredit;
-        $data['expirationdate'] = time();
-        $data['nowdate'] = time();
-        $data['checkouturl'] = $CFG->wwwroot . "/local/shopping_cart/checkout.php";
-
-        if (!$cachedrawdata) {
-            list($data['credit'], $data['currency']) = shopping_cart_credits::get_balance($userid);
-            $data['items'] = [];
-            $data['remainingcredit'] = $data['credit'];
-
-        } else if ($cachedrawdata) {
-            $count = isset($cachedrawdata['items']) ? count($cachedrawdata['items']) : 0;
-            $data['count'] = $count;
-
-            $data['currency'] = $cachedrawdata['currency'] ?? null;
-            $data['credit'] = $cachedrawdata['credit'] ?? null;
-            $data['remainingcredit'] = $data['credit'];
-
-            if ($count > 0) {
-                // We need the userid in every item.
-                $items = array_map(function($item) use ($USER, $userid) {
-                    $item['userid'] = $userid != $USER->id ? -1 : 0;
-                    return $item;
-                }, $cachedrawdata['items']);
-
-                $data['items'] = self::update_item_price_data(array_values($items), $taxcategories);
-
-                $data['price'] = self::calculate_total_price($data["items"]);
-                if ($taxesenabled) {
-                    $data['price_net'] = self::calculate_total_price($data["items"], true);
-                }
-                $data['discount'] = array_sum(array_column($data['items'], 'discount'));
-                $data['expirationdate'] = $cachedrawdata['expirationdate'];
-            }
-        }
-
-        // There might be cases where we don't have the currency or credit yet. We take it from the last item in our cart.
-        if (empty($data['currency']) && (count($data['items']) > 0)) {
-            $data['currency'] = end($data['items'])['currency'];
-        } else if (empty($data['currency'])) {
-            $data['currency'] = '';
-        }
-        $data['credit'] = $data['credit'] ?? 0.00;
-
-        if ($cachedrawdata && count($data['items']) > 0) {
-            // If there is credit for this user, we give her options.
-            shopping_cart_credits::prepare_checkout($data, $userid, $usecredit);
-        } else if (count($data['items']) == 0) {
-            // If not, we save the cache right away.
-            $cache->set($cachekey, $data);
-        }
-
-        return $data;
+        return $cartstore->get_data();
     }
 
     /**
@@ -712,58 +576,39 @@ class shopping_cart {
      * @return ?int
      */
     public static function get_saved_usecredit_state(int $userid): ?int {
-        $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-        $cachekey = $userid . '_shopping_cart';
-        $cachedrawdata = $cache->get($cachekey);
 
-        if ($cachedrawdata && isset($cachedrawdata['usecredit'])) {
-            return $cachedrawdata['usecredit'];
-        } else {
-            return null;
-        }
+        $cartstore = cartstore::instance($userid);
+        return $cartstore->get_usecredit_state();
     }
 
     /**
      * Sets the usecredit value in Cache for the user.
      *
      * @param int $userid
-     * @param bool $usecredit
+     * @param int $usecredit
      * @return void
      */
-    public static function save_used_credit_state(int $userid, bool $usecredit) {
-        $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-        $cachekey = $userid . '_shopping_cart';
-        $cachedrawdata = $cache->get($cachekey);
-        $cachedrawdata['usecredit'] = $usecredit;
-        $cache->set($cachekey, $cachedrawdata);
+    public static function save_used_credit_state(int $userid, int $usecredit) {
+
+        $cartstore = cartstore::instance($userid);
+        return $cartstore->save_usecredit_state($usecredit);
     }
 
     /**
      * To add or reschedule addhoc tasks to delete all the items once the shopping cart is expired.
      * As the expiration date is always calculated by the cart, not the item, this always updates the whole cart.
      *
-     * @param int $expirationtimestamp
+     * @param int $expirationtime
      * @param int $userid
      * @return void
      */
-    public static function add_or_reschedule_addhoc_tasks(int $expirationtimestamp, int $userid) {
+    public static function add_or_reschedule_addhoc_tasks(int $expirationtime, int $userid) {
 
-        $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-        $cachekey = $userid . '_shopping_cart';
+        $cartstore = cartstore::instance($userid);
+        $items = $cartstore->get_items();
+        $cartstore->set_expiration($expirationtime);
 
-        $cachedrawdata = $cache->get($cachekey);
-        // First thing, we set the new expiration date in the cache.
-        $cachedrawdata["expirationdate"] = $expirationtimestamp;
-        $cache->set($cachekey, $cachedrawdata);
-
-        if (!$cachedrawdata
-                || !isset($cachedrawdata['items'])
-                || (count($cachedrawdata['items']) < 1)) {
-            return;
-        }
-        // Now we schedule tasks to delete item from cart after some time.
-        foreach ($cachedrawdata['items'] as $taskdata) {
-
+        foreach ($items as $taskdata) {
             // We don't touch booking fee.
             // The fee will be deleted together with the other items.
             if ($taskdata['componentname'] === 'local_shpping_cart') {
@@ -771,7 +616,7 @@ class shopping_cart {
             }
             $deleteitemtask = new delete_item_task();
             $deleteitemtask->set_userid($userid);
-            $deleteitemtask->set_next_run_time($expirationtimestamp);
+            $deleteitemtask->set_next_run_time($expirationtime);
             $deleteitemtask->set_custom_data($taskdata);
             \core\task\manager::reschedule_or_queue_adhoc_task($deleteitemtask);
         }
@@ -815,6 +660,10 @@ class shopping_cart {
      * This function confirms that a user has paid for the items which are currently in her shopping cart...
      * .. or the items passed by shopping cart history. The second option is the case when we use the payment module of moodle.
      *
+     * 1. Check if price is 0. If so, user can pay for herself, or cashier can pay for others.
+     * 2. Create an identifier if there is none.
+     * 3. If we were paying by card, we need to use credits.
+     *
      * @param int $userid
      * @param int $paymenttype
      * @param array $datafromhistory
@@ -830,46 +679,42 @@ class shopping_cart {
         // We use this flag to keep track if we have already used the credits or not.
         $creditsalreadyused = false;
 
+        // We deal with two separate cases.
+        // If we receive the data via the callback from a payment provider...
+        // ... we will have an identifier and $datafromhistory will actually hold the records retrieved...
+        // ... from shopping_cart_history table via this identifier.
+        // If not, we need to create the identifier first, because we checkout via cashier or pay with credits.
+
+        $context = context_system::instance();
+
         // When the function is called from webservice, we don't have a $datafromhistory array.
         if (!$data = $datafromhistory) {
-            // Retrieve items from cache.
-            $data = self::local_shopping_cart_get_cache_data($userid);
 
-            // Now, this can happen in two cases. Either, a user wants to pay with his credits for his item.
-            // This can only go through, when price is 0.
+            $cartstore = cartstore::instance($userid);
+            $data = $cartstore->get_data();
 
-            $context = context_system::instance();
+            // If the price is not null, user has to have cashier rights to proceed here.
+            if (($data['price'] != 0)
+                && !has_capability('local/shopping_cart:cashier', $context)) {
 
-            if ($userid == $USER->id) {
-                if ($data['price'] == 0) {
-                    // The user wants to pay for herself with her credits and she has enough.
-                    // We actually don't need to do anything here.
-                    $data['price'] = 0;
-
-                } else if (!has_capability('local/shopping_cart:cashier', $context)) {
-                    // The cashier could call this to pay for herself, therefore only for non cashiers, we return here.
-                    return [
-                            'status' => 0,
-                            'error' => get_string('notenoughcredit', 'local_shopping_cart'),
-                            'credit' => (float)$data['remainingcredit'],
-                            'identifier' => $identifier,
-                    ];
-                }
-            } else {
-                if (!has_capability('local/shopping_cart:cashier', $context)) {
-                    return [
-                            'status' => 0,
-                            'error' => get_string('nopermission', 'local_shopping_cart'),
-                            'credit' => 0.0,
-                            'identifier' => $identifier,
-                    ];
-                }
+                return [
+                    'status' => 0,
+                    'error' => get_string('nopermission', 'local_shopping_cart'),
+                    'credit' => (float)$data['remainingcredit'] ?? 0.0,
+                    'identifier' => $identifier,
+                ];
             }
+
+            // Retrieve items from cache.
+            $cartstore = cartstore::instance($userid);
+            $data = $cartstore->get_data();
 
             // Now the user either has enough credit to pay for herself, or she is a cashier.
             $identifier = shopping_cart_history::create_unique_cart_identifier($userid);
 
         } else {
+
+            // TODO: Migrate everything to the cartstore & pricemodifiers.
 
             // Even if we get the data from history, we still need to look in cache.
             // With this, we will know how much the user actually paid and how much comes from her credits.
@@ -896,14 +741,18 @@ class shopping_cart {
         $success = true;
         $error = [];
 
+        // When we come from rebooking, we need to correct the price of the rebooking item.
+        // The total price can't be below 0.
+        shopping_cart_rebookingcredit::correct_item_price_for_rebooking($data);
+
         // When we use credits, we have to log this in the ledger so cash report will have the correct sums!
         if (isset($data["usecredit"]) && $data["usecredit"] && isset($data["credit"]) && $data["credit"] > 0) {
 
             // If we have no identifier, we look for it in items.
             if (empty($identifier)) {
                 foreach ($data["items"] as $item) {
-                    if (!empty($item->identifier)) {
-                        $identifier = $item->identifier;
+                    if (!empty($item['identifier'])) {
+                        $identifier = $item['identifier'];
                         break;
                     }
                 }
@@ -931,7 +780,6 @@ class shopping_cart {
         foreach ($data['items'] as $item) {
 
             // We might retrieve the items from history or via cache. From history, they come as stdClass.
-
             $item = (array) $item;
 
             // If the item identifier is specified (this is only the case, when we get data from history)...
@@ -943,7 +791,18 @@ class shopping_cart {
                 $item['itemname'] = $item['itemid'];
             }
 
-            if (!self::successful_checkout($item['componentname'], $item['area'], $item['itemid'], $userid)) {
+            // Here, we have two different ways to call the component callback.
+            // And for rebooking, there is quite some change going, as we actually replace the item.
+            if (($item['componentname'] === 'local_shopping_cart')
+                && ($item['area'] === 'rebookitem')) {
+
+                shopping_cart_rebookingcredit::checkout_rebooking_item(
+                    $item['componentname'],
+                    $item['area'],
+                    $item['itemid'],
+                    $userid,
+                );
+            } else if (!self::successful_checkout($item['componentname'], $item['area'], $item['itemid'], $userid)) {
                 $success = false;
                 $error[] = get_string('itemcouldntbebought', 'local_shopping_cart', $item['itemname']);
 
@@ -959,7 +818,9 @@ class shopping_cart {
                     ],
                 ]);
 
-            } else {
+            }
+
+            if ($success == true) {
                 // Delete Item from cache.
                 // Here, we don't need to unload the component, so the last parameter is false.
                 self::delete_item_from_cart($item['componentname'], $item['area'], $item['itemid'], $userid, false);
@@ -967,28 +828,25 @@ class shopping_cart {
                 // We create this entry only for cash payment, that is when there is no datafromhistory yet.
                 if (!$datafromhistory) {
 
-                    // In cash report we have to sum up cash sums, so we cannot use LOCAL_SHOPPING_CART_PAYMENT_METHOD_CREDITS.
-                    // So do not do this anymore but use the actual payment method.
-                    // phpcs:ignore Squiz.PHP.CommentedOutCode.Found
-                    /* $paymentmethod = $data['price'] == 0 ? LOCAL_SHOPPING_CART_PAYMENT_METHOD_CREDITS :
-                        LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER;
-                    if ($paymentmethod === LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER) {
-                        // We now need to specify the actual payment method (cash, debit or credit card).
-                        switch ($paymenttype) {
-                            case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_CASH:
-                            case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_CREDITCARD:
-                            case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_DEBITCARD:
-                            case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_MANUAL:
-                                $paymentmethod = $paymenttype;
-                                break;
-                        }
-                    } */
                     $paymentmethod = $paymenttype;
 
                     // Make sure we can pass on a valid value.
                     $item['discount'] = $item['discount'] ?? 0;
+                    $item['identifier'] = $identifier;
+                    $item['annotation'] = $annotation ?? '';
+                    $item['payment'] = $paymentmethod;
+                    $item['usermodified'] = $USER->id;
 
-                    shopping_cart_history::create_entry_in_history(
+                    if (($item['componentname'] === 'local_shopping_cart')
+                        && ($item['area'] === 'rebookitem')) {
+
+                            $historyitem = shopping_cart_history::return_item_from_history($item['itemid']);
+
+                            $item['schistoryid'] = $item['itemid'];
+                            $item['itemid'] = $historyitem->itemid;
+                    }
+
+                    $id = shopping_cart_history::create_entry_in_history(
                             $userid,
                             $item['itemid'],
                             $item['itemname'],
@@ -997,8 +855,8 @@ class shopping_cart {
                             $item['currency'],
                             $item['componentname'],
                             $item['area'],
-                            $identifier,
-                            $paymentmethod,
+                            $item['identifier'],
+                            $item['payment'],
                             LOCAL_SHOPPING_CART_PAYMENT_SUCCESS,
                             $item['canceluntil'] ?? null,
                             $item['serviceperiodstart'] ?? 0,
@@ -1007,11 +865,23 @@ class shopping_cart {
                             $item['taxpercentage'] ?? null,
                             $item['taxcategory'] ?? null,
                             $item['costcenter'] ?? null,
-                            $annotation ?? '',
-                            $USER->id
+                            $item['annotation'],
+                            $item['usermodified'],
+                            $item['schistoryid'] ?? null,
+                            $item['installments'] ?? 0,
+                            $item['json'] ?? ''
                     );
+
+                    $item['id'] = $id;
+                    // If we just paid for an installment, we need a very special treatment.
+                    if ($item['componentname'] === 'local_shopping_cart'
+                        && strpos($item['area'], 'installment') !== false) {
+
+                        $item['id'] = $id;
+                    }
                 }
 
+                shopping_cart_history::set_success_in_db([(object)$item]);
             }
         }
 
@@ -1097,7 +967,19 @@ class shopping_cart {
             }
         }
 
-        // Check if cancelation is still within the allowed periode set in shopping_cart_history.
+        // At this point, we need a fallback when the historyid is empty.
+        // This happens typically when the cancel comes from outside shopping.
+        // We then just take the newest matching purchase.
+        if (empty($historyid)) {
+            $record = shopping_cart_history::get_most_recent_historyitem(
+                $componentname,
+                $area,
+                $itemid,
+                $userid);
+            $historyid = empty($record) ? 0 : $record->id;
+        }
+
+        // Check if cancelation is still within the allowed period set in shopping_cart_history.
         if (!self::allowed_to_cancel($historyid, $itemid, $area, $userid)) {
             return [
                     'success' => 0,
@@ -1245,9 +1127,7 @@ class shopping_cart {
      */
     public static function allowed_to_cancel(int $historyid, int $itemid, string $area, int $userid): bool {
 
-        $context = context_system::instance();
-
-        if (!$item = shopping_cart_history::return_item_from_history($historyid, $itemid, $area, $userid)) {
+        if (!$item = shopping_cart_history::return_item_from_history($historyid)) {
             return false;
         }
 
@@ -1256,12 +1136,26 @@ class shopping_cart {
             return false;
         }
 
+        return self::allowed_to_cancel_for_item($item, $area);
+    }
+
+    /**
+     * This function does not need the historyid but justs the component relevant settings.
+     * @param stdClass $item
+     * @param string $area
+     * @return bool
+     * @throws coding_exception
+     * @throws dml_exception
+     */
+    public static function allowed_to_cancel_for_item(stdClass $item, string $area) {
+        $context = context_system::instance();
+
         // Cashier can always cancel but if it's no cashier...
         if (!has_capability('local/shopping_cart:cashier', $context)) {
             // ...then we have to check, if the item itself allows cancellation.
             $providerclass = static::get_service_provider_classname($item->componentname);
             try {
-                $itemallowedtocancel = component_class_callback($providerclass, 'allowed_to_cancel', [$area, $itemid]);
+                $itemallowedtocancel = component_class_callback($providerclass, 'allowed_to_cancel', [$area, $item->itemid]);
             } catch (Exception $e) {
                 $itemallowedtocancel = false;
             }
@@ -1284,93 +1178,6 @@ class shopping_cart {
         }
 
         return true;
-    }
-
-    /**
-     *
-     * Add discount to item.
-     * - First we check if the item is here.
-     * - Now we add the discount to the cart.
-     * - For any fail, we return success 0.
-     *
-     * @param string $component
-     * @param string $area
-     * @param int $itemid
-     * @param int $userid
-     * @param float $percent
-     * @param float $absolute
-     * @return array
-     */
-    public static function add_discount_to_item(
-        string $component,
-        string $area,
-        int $itemid,
-        int $userid,
-        float $percent,
-        float $absolute): array {
-
-        $context = context_system::instance();
-        if (!has_capability('local/shopping_cart:cashier', $context)) {
-            throw new moodle_exception('norighttoaccess', 'local_shopping_cart');
-        }
-
-        $cache = \cache::make('local_shopping_cart', 'cacheshopping');
-        $cachekey = $userid . '_shopping_cart';
-
-        $cachedrawdata = $cache->get($cachekey);
-        $cacheitemkey = $component . '-' . $area . '-' . $itemid;
-
-        // Item has to be there.
-        if (!isset($cachedrawdata['items'][$cacheitemkey])) {
-            throw new moodle_exception('itemnotfound', 'local_shopping_cart');
-        }
-
-        $item = $cachedrawdata['items'][$cacheitemkey];
-
-        // The undiscounted price of the item is price + discount.
-        $initialdiscount = $item['discount'] ?? 0;
-
-        // If setting to round discounts is turned on, we round to full int.
-        $discountprecision = get_config('local_shopping_cart', 'rounddiscounts') ? 0 : 2;
-        $initialdiscount = round($initialdiscount, $discountprecision);
-
-        $initialprice = $item['price'] + $initialdiscount;
-
-        if (!empty($percent)) {
-
-            // Validation of percent value.
-            if ($percent < 0 || $percent > 100) {
-                throw new moodle_exception('absolutevalueinvalid', 'local_shopping_cart');
-            }
-            $cachedrawdata['items'][$cacheitemkey]['discount'] = $initialprice / 100 * $percent;
-
-            // If setting to round discounts is turned on, we round to full int.
-            $cachedrawdata['items'][$cacheitemkey]['discount'] = round($cachedrawdata['items'][$cacheitemkey]['discount'],
-                    $discountprecision);
-
-            $cachedrawdata['items'][$cacheitemkey]['price'] =
-                    $initialprice - $cachedrawdata['items'][$cacheitemkey]['discount'];
-        } else if (!empty($absolute)) {
-            // Validation of absolute value.
-            if ($absolute < 0 || $absolute > $initialprice) {
-                throw new moodle_exception('absolutevalueinvalid', 'local_shopping_cart');
-            }
-            $cachedrawdata['items'][$cacheitemkey]['discount'] = $absolute;
-            // If setting to round discounts is turned on, we round to full int.
-            $cachedrawdata['items'][$cacheitemkey]['discount'] = round($cachedrawdata['items'][$cacheitemkey]['discount'],
-                    $discountprecision);
-            $cachedrawdata['items'][$cacheitemkey]['price'] =
-                    $initialprice - $cachedrawdata['items'][$cacheitemkey]['discount'];
-        } else {
-            // If both are empty, we unset discount.
-            $cachedrawdata['items'][$cacheitemkey]['price'] = $initialprice;
-            unset($cachedrawdata['items'][$cacheitemkey]['discount']);
-        }
-
-        // We write the modified data back to cache.
-        $cache->set($cachekey, $cachedrawdata);
-
-        return ['success' => 1];
     }
 
     /**
@@ -1402,8 +1209,12 @@ class shopping_cart {
                     'accountid' => $record->accountid ?? null,
                     'usermodified' => $record->usermodified, // Not nullable.
                     'area' => $record->area ?? null,
+                    'annotation' => $record->annotation ?? null,
+                    'schistoryid' => $record->schistoryid ?? null,
                 ]))) {
                     // We only insert if entry does not exist yet.
+
+                    $record->timecreated = $record->timecreated ?? time();
                     $id = $DB->insert_record('local_shopping_cart_ledger', $record);
                     cache_helper::purge_by_event('setbackcachedcashreport');
                 }
@@ -1418,6 +1229,7 @@ class shopping_cart {
                 $record->payment = LOCAL_SHOPPING_CART_PAYMENT_METHOD_CREDITS;
                 $record->gateway = null;
                 $record->orderid = null;
+                $record->schistoryid = null;
                 $id = $DB->insert_record('local_shopping_cart_ledger', $record);
                 cache_helper::purge_by_event('setbackcachedcashreport');
                 break;
@@ -1456,12 +1268,6 @@ class shopping_cart {
         $context = context_system::instance();
 
         foreach ($items as $key => $item) {
-
-            // As a cashier, I always want to be able to delete the booking fee.
-            if ($items[$key]['nodelete'] === 1 &&
-                has_capability('local/shopping_cart:cashier', $context)) {
-                $items[$key]['nodelete'] = 0;
-            }
 
             if ($taxcategories) {
                 $taxpercent = $taxcategories->tax_for_category($item['taxcategory'], $countrycode);
@@ -1502,7 +1308,8 @@ class shopping_cart {
      * @return float the total price (net or gross) of all items rounded to two decimal places
      */
     public static function calculate_total_price(array $items, bool $calculatenetprice = false): float {
-        return round(array_reduce($items, function($sum, $item) use ($calculatenetprice) {
+
+        $price = round(array_reduce($items, function($sum, $item) use ($calculatenetprice) {
             if ($calculatenetprice) {
                 // Calculate net price.
                 if (key_exists('price_net', $item)) {
@@ -1520,6 +1327,8 @@ class shopping_cart {
             }
             return $sum;
         }, 0.0), 2);
+
+        return $price >= 0 ? $price : 0;
     }
 
     /**
@@ -1534,7 +1343,7 @@ class shopping_cart {
      */
     public static function get_quota_consumed(string $component, string $area, int $itemid, int $userid, int $historyid): array {
 
-        $item = shopping_cart_history::return_item_from_history($historyid, $itemid, $area, $userid);
+        $item = shopping_cart_history::return_item_from_history($historyid);
 
         self::add_quota_consumed_to_item($item, $userid);
         $quota = $item->quotaconsumed;
@@ -1570,7 +1379,9 @@ class shopping_cart {
         global $DB;
         $params = [];
         $values = explode(' ', $query);
-        $fullsql = $DB->sql_concat('u.firstname', '\'\'', 'u.lastname', '\'\'', 'u.email');
+        $fullsql = $DB->sql_concat(
+            '\' \'', 'u.id', '\' \'', 'u.firstname', '\' \'', 'u.lastname', '\' \'', 'u.email', '\' \''
+        );
         $sql = "SELECT * FROM (
                     SELECT u.id, u.firstname, u.lastname, u.email, $fullsql AS fulltextstring
                     FROM {user} u
@@ -1586,7 +1397,8 @@ class shopping_cart {
 
                 $sql .= $firstrun ? ' WHERE ' : ' AND ';
                 $sql .= " " . $DB->sql_like('fulltextstring', ':param' . $counter, false) . " ";
-                $params['param' . $counter] = "%$value%";
+                // If it's numeric, we search for the full number - so we need to add blanks.
+                $params['param' . $counter] = is_numeric($value) ? "% $value %" : "%$value%";
                 $firstrun = false;
                 $counter++;
             }
@@ -1616,22 +1428,6 @@ class shopping_cart {
             'warnings' => count($list) > 100 ? get_string('toomanyuserstoshow', 'core', '> 100') : '',
             'list' => count($list) > 100 ? [] : $list,
         ];
-    }
-
-    /**
-     * Helper function to get the latest used currency from history.
-     * @return string the currency string, e.g. "EUR"
-     */
-    public static function get_latest_currency_from_history(): string {
-        global $DB;
-
-        if ($currency = $DB->get_field_sql("SELECT currency
-            FROM {local_shopping_cart_history}
-            ORDER BY id DESC
-            LIMIT 1")) {
-            return $currency;
-        }
-        return "";
     }
 
     /**
@@ -1830,6 +1626,7 @@ class shopping_cart {
                     $item['price_gross'] = number_format(round((float) $item['price_gross'], 2), 2, '.', '');
                 }
             }
+            $data['items'] = array_values($data['items']);
         }
     }
 
@@ -1888,6 +1685,25 @@ class shopping_cart {
 
         $commaseparator = current_language() == 'de' ? ',' : '.';
 
+        // Get the current date and daily sums date.
+        $now = time();
+        $dailysumstimestamp = strtotime($date);
+        switch (current_language()) {
+            case 'de':
+                $currentdate = date('d.m.Y', $now);
+                $dailysumsdate = date('d.m.Y', $dailysumstimestamp);
+                break;
+            default:
+                $currentdate = date('M d, Y', $now);
+                $dailysumsdate = date('M d, Y', $dailysumstimestamp);
+                break;
+        }
+
+        $dailysumsdata['date'] = $dailysumsdate; // Date.
+        $dailysumsdata['printdate'] = $currentdate; // Actual date of today, might be needed in PDF.
+        $dailysumsdata['currency'] = get_config('local_shopping_cart', 'globalcurrency') ?? 'EUR';
+        $dailysumsdata['title'] = get_string('titledailysums', 'local_shopping_cart');
+
         // SQL to get daily sums.
         $dailysumssql = "SELECT payment, sum(price) dailysum
             FROM {local_shopping_cart_ledger}
@@ -1907,48 +1723,49 @@ class shopping_cart {
         $total = 0.0;
         foreach ($dailysumsfromdb as $dailysumrecord) {
             $add = true;
+            $dailysumrecord->dailysumformatted = number_format((float)$dailysumrecord->dailysum, 2, $commaseparator, '');
             switch ($dailysumrecord->payment) {
                 case LOCAL_SHOPPING_CART_PAYMENT_METHOD_ONLINE:
                     $total += (float)$dailysumrecord->dailysum;
-                    $dailysumrecord->dailysumformatted = number_format((float)$dailysumrecord->dailysum, 2, $commaseparator, '');
                     $dailysumrecord->paymentmethod = get_string('paymentmethodonline', 'local_shopping_cart');
+                    $dailysumsdata['online'] = $dailysumrecord->dailysumformatted;
                     break;
                 case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER:
                     $total += (float)$dailysumrecord->dailysum;
-                    $dailysumrecord->dailysumformatted = number_format((float)$dailysumrecord->dailysum, 2, $commaseparator, '');
                     $dailysumrecord->paymentmethod = get_string('paymentmethodcashier', 'local_shopping_cart');
+                    $dailysumsdata['cashier'] = $dailysumrecord->dailysumformatted;
                     break;
                 case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CREDITS_PAID_BACK_BY_CASH:
                     // Will be a negative number, so we can still use "+=".
                     $total += (float)$dailysumrecord->dailysum;
-                    $dailysumrecord->dailysumformatted = number_format((float)$dailysumrecord->dailysum, 2, $commaseparator, '');
                     $dailysumrecord->paymentmethod = get_string('paymentmethodcreditspaidbackcash', 'local_shopping_cart');
+                    $dailysumsdata['creditspaidbackcash'] = $dailysumrecord->dailysumformatted;
                     break;
                 case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CREDITS_PAID_BACK_BY_TRANSFER:
                     // Will be a negative number, so we can still use "+=".
                     $total += (float)$dailysumrecord->dailysum;
-                    $dailysumrecord->dailysumformatted = number_format((float)$dailysumrecord->dailysum, 2, $commaseparator, '');
                     $dailysumrecord->paymentmethod = get_string('paymentmethodcreditspaidbacktransfer', 'local_shopping_cart');
+                    $dailysumsdata['creditspaidbacktransfer'] = $dailysumrecord->dailysumformatted;
                     break;
                 case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_CASH:
                     $total += (float)$dailysumrecord->dailysum;
-                    $dailysumrecord->dailysumformatted = number_format((float)$dailysumrecord->dailysum, 2, $commaseparator, '');
                     $dailysumrecord->paymentmethod = get_string('paymentmethodcashier:cash', 'local_shopping_cart');
+                    $dailysumsdata['cash'] = $dailysumrecord->dailysumformatted;
                     break;
                 case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_CREDITCARD:
                     $total += (float)$dailysumrecord->dailysum;
-                    $dailysumrecord->dailysumformatted = number_format((float)$dailysumrecord->dailysum, 2, $commaseparator, '');
                     $dailysumrecord->paymentmethod = get_string('paymentmethodcashier:creditcard', 'local_shopping_cart');
+                    $dailysumsdata['creditcard'] = $dailysumrecord->dailysumformatted;
                     break;
                 case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_DEBITCARD:
                     $total += (float)$dailysumrecord->dailysum;
-                    $dailysumrecord->dailysumformatted = number_format((float)$dailysumrecord->dailysum, 2, $commaseparator, '');
                     $dailysumrecord->paymentmethod = get_string('paymentmethodcashier:debitcard', 'local_shopping_cart');
+                    $dailysumsdata['debitcard'] = $dailysumrecord->dailysumformatted;
                     break;
                 case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_MANUAL:
                     $total += (float)$dailysumrecord->dailysum;
-                    $dailysumrecord->dailysumformatted = number_format((float)$dailysumrecord->dailysum, 2, $commaseparator, '');
                     $dailysumrecord->paymentmethod = get_string('paymentmethodcashier:manual', 'local_shopping_cart');
+                    $dailysumsdata['manual'] = $dailysumrecord->dailysumformatted;
                     break;
                 default:
                     $add = false;
@@ -1985,27 +1802,35 @@ class shopping_cart {
                 switch ($dailysumrecord->payment) {
                     case LOCAL_SHOPPING_CART_PAYMENT_METHOD_ONLINE:
                         $dailysumrecord->paymentmethod = get_string('paymentmethodonline', 'local_shopping_cart');
+                        $dailysumsdata['currentcashier:online'] = $dailysumrecord->dailysumformatted;
                         break;
                     case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER:
                         $dailysumrecord->paymentmethod = get_string('paymentmethodcashier', 'local_shopping_cart');
+                        $dailysumsdata['currentcashier:cashier'] = $dailysumrecord->dailysumformatted;
                         break;
                     case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CREDITS_PAID_BACK_BY_CASH:
                         $dailysumrecord->paymentmethod = get_string('paymentmethodcreditspaidbackcash', 'local_shopping_cart');
+                        $dailysumsdata['currentcashier:creditspaidbackcash'] = $dailysumrecord->dailysumformatted;
                         break;
                     case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CREDITS_PAID_BACK_BY_TRANSFER:
                         $dailysumrecord->paymentmethod = get_string('paymentmethodcreditspaidbacktransfer', 'local_shopping_cart');
+                        $dailysumsdata['currentcashier:creditspaidbacktransfer'] = $dailysumrecord->dailysumformatted;
                         break;
                     case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_CASH:
                         $dailysumrecord->paymentmethod = get_string('paymentmethodcashier:cash', 'local_shopping_cart');
+                        $dailysumsdata['currentcashier:cash'] = $dailysumrecord->dailysumformatted;
                         break;
                     case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_CREDITCARD:
                         $dailysumrecord->paymentmethod = get_string('paymentmethodcashier:creditcard', 'local_shopping_cart');
+                        $dailysumsdata['currentcashier:creditcard'] = $dailysumrecord->dailysumformatted;
                         break;
                     case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_DEBITCARD:
                         $dailysumrecord->paymentmethod = get_string('paymentmethodcashier:debitcard', 'local_shopping_cart');
+                        $dailysumsdata['currentcashier:debitcard'] = $dailysumrecord->dailysumformatted;
                         break;
                     case LOCAL_SHOPPING_CART_PAYMENT_METHOD_CASHIER_MANUAL:
                         $dailysumrecord->paymentmethod = get_string('paymentmethodcashier:manual', 'local_shopping_cart');
+                        $dailysumsdata['currentcashier:manual'] = $dailysumrecord->dailysumformatted;
                         break;
                     default:
                         $add = false;
@@ -2027,20 +1852,9 @@ class shopping_cart {
             $dailysumsdata['dailysums:exist'] = true;
         }
 
-        // Transform date to German format if current language is German.
-        if (current_language() == 'de') {
-            list($year, $month, $day) = explode('-', $date);
-            $dailysumsdata['date'] = $day . '.' . $month . '.' . $year;
-        } else {
-            $dailysumsdata['date'] = $date;
-        }
-
         if (!empty($selectorformoutput)) {
             $dailysumsdata['selectorform'] = $selectorformoutput;
         }
-
-        // Add currency.
-        $dailysumsdata['currency'] = get_config('local_shopping_cart', 'globalcurrency') ?? 'EUR';
 
         // Add download URL.
         if (!empty($date)) {
